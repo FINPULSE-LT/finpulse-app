@@ -1,0 +1,500 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { Navbar } from "@/components/navigation/Navbar";
+import { MobileTabBar } from "@/components/navigation/MobileTabBar";
+import { CoachWidget } from "@/components/coach/CoachWidget";
+import { AntStreakWidget } from "@/components/streaks/AntStreakWidget";
+import { QuickTransactionBar } from "@/components/transactions/QuickTransactionBar";
+import { TransactionList } from "@/components/transactions/TransactionList";
+import { AccountsWidget } from "@/components/accounts/AccountsWidget";
+import { GoalsWidget } from "@/components/goals/GoalsWidget";
+import { ReportsView } from "@/components/reports/ReportsView";
+import { VoiceExpenseModal } from "@/components/transactions/VoiceExpenseModal";
+import { TransactionFormModal } from "@/components/transactions/TransactionFormModal";
+import { ShortcutsModal } from "@/components/shortcuts/ShortcutsModal";
+import { AuthModal } from "@/components/auth/AuthModal";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { formatCurrency } from "@/lib/formatters/currency";
+import { evaluateStreakUpdate } from "@/lib/streaks/engine";
+import { createClient } from "@/lib/supabase/client";
+import {
+  INITIAL_ACCOUNTS,
+  INITIAL_TRANSACTIONS,
+  INITIAL_GOALS,
+} from "@/constants/initialData";
+import { CoachPersonalityType } from "@/constants/coach";
+import { Account, Transaction, SavingsGoal, ParsedTransactionResult } from "@/types";
+import { Wallet, TrendingUp, TrendingDown, PiggyBank, Sparkles } from "lucide-react";
+
+export default function HomePage() {
+  // Estado Principal
+  const [activeTab, setActiveTab] = useState<
+    "dashboard" | "transactions" | "accounts" | "goals" | "reports"
+  >("dashboard");
+
+  const [accounts, setAccounts] = useState<Account[]>(INITIAL_ACCOUNTS);
+  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
+  const [goals, setGoals] = useState<SavingsGoal[]>(INITIAL_GOALS);
+  const [coachMode, setCoachMode] = useState<CoachPersonalityType>("encouraging");
+  const [streakCount, setStreakCount] = useState<number>(7);
+  const [rescuedMoney, setRescuedMoney] = useState<number>(31500);
+  const [freezeAvailable, setFreezeAvailable] = useState<boolean>(true);
+  const [userEmail, setUserEmail] = useState<string | undefined>(undefined);
+
+  // Modales
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Persistencia Local & Detección de Usuario en Supabase
+  useEffect(() => {
+    // 1. Cargar datos guardados si existen en localStorage
+    const savedTx = localStorage.getItem("finpulse_transactions");
+    if (savedTx) {
+      try {
+        setTransactions(JSON.parse(savedTx));
+      } catch {}
+    }
+
+    const savedAcc = localStorage.getItem("finpulse_accounts");
+    if (savedAcc) {
+      try {
+        setAccounts(JSON.parse(savedAcc));
+      } catch {}
+    }
+
+    const savedGoals = localStorage.getItem("finpulse_goals");
+    if (savedGoals) {
+      try {
+        setGoals(JSON.parse(savedGoals));
+      } catch {}
+    }
+
+    const savedCoach = localStorage.getItem("finpulse_coach_mode") as CoachPersonalityType;
+    if (savedCoach) {
+      setCoachMode(savedCoach);
+    }
+
+    // 2. Verificar sesión de Supabase
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) {
+        setUserEmail(data.user.email);
+      }
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user?.email) {
+          setUserEmail(session.user.email);
+        } else {
+          setUserEmail(undefined);
+        }
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Guardar en localStorage ante cambios
+  useEffect(() => {
+    localStorage.setItem("finpulse_transactions", JSON.stringify(transactions));
+  }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem("finpulse_accounts", JSON.stringify(accounts));
+  }, [accounts]);
+
+  useEffect(() => {
+    localStorage.setItem("finpulse_goals", JSON.stringify(goals));
+  }, [goals]);
+
+  // Manejador de Atajos Globales de Teclado
+  useKeyboardShortcuts({
+    onQuickInputFocus: () => {
+      const input = document.querySelector('input[placeholder*="Almuerzo"]') as HTMLInputElement;
+      input?.focus();
+    },
+    onNewTransaction: () => setIsManualModalOpen(true),
+    onVoiceRecord: () => setIsVoiceModalOpen(true),
+    onToggleShortcuts: () => setIsShortcutsModalOpen((prev) => !prev),
+    onNavDashboard: () => setActiveTab("dashboard"),
+    onNavTransactions: () => setActiveTab("transactions"),
+    onNavAccounts: () => setActiveTab("accounts"),
+    onNavGoals: () => setActiveTab("goals"),
+    onNavReports: () => setActiveTab("reports"),
+  });
+
+  // Guardar Transacción Parseda por IA (Texto o Voz)
+  const handleSaveParsedTransaction = (
+    parsed: ParsedTransactionResult,
+    selectedAccountId?: string
+  ) => {
+    const acc = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
+
+    const newTx: Transaction = {
+      id: `tx-${Date.now()}`,
+      userId: userEmail || "demo-user",
+      accountId: acc ? acc.id : undefined,
+      accountName: acc ? acc.name : "General",
+      type: parsed.type,
+      amount: parsed.amount,
+      category: parsed.category,
+      description: parsed.description,
+      isAntExpense: parsed.isAntExpense,
+      installmentsTotal: parsed.installmentsTotal || 1,
+      installmentCurrent: 1,
+      transactedAt: new Date().toISOString(),
+    };
+
+    setTransactions((prev) => [newTx, ...prev]);
+
+    // Actualizar Saldo de Cuenta
+    if (acc) {
+      setAccounts((prev) =>
+        prev.map((a) => {
+          if (a.id === acc.id) {
+            const diff = parsed.type === "income" ? parsed.amount : -parsed.amount;
+            return { ...a, balance: a.balance + diff };
+          }
+          return a;
+        })
+      );
+    }
+
+    // Evaluar Racha de Gastos Hormiga
+    const streakResult = evaluateStreakUpdate(
+      streakCount,
+      undefined,
+      parsed.isAntExpense,
+      freezeAvailable
+    );
+    setStreakCount(streakResult.newStreak);
+    if (streakResult.freezeUsed) setFreezeAvailable(false);
+    if (streakResult.rescuedMoneyAdded > 0) {
+      setRescuedMoney((prev) => prev + streakResult.rescuedMoneyAdded);
+    }
+  };
+
+  // Guardar Transacción Manual Detallada
+  const handleSaveManualTransaction = (
+    txData: Omit<Transaction, "id" | "userId">
+  ) => {
+    const acc = accounts.find((a) => a.id === txData.accountId);
+    const newTx: Transaction = {
+      ...txData,
+      id: `tx-${Date.now()}`,
+      userId: userEmail || "demo-user",
+      accountName: acc ? acc.name : undefined,
+    };
+
+    setTransactions((prev) => [newTx, ...prev]);
+
+    // Actualizar Saldo
+    if (acc) {
+      setAccounts((prev) =>
+        prev.map((a) => {
+          if (a.id === acc.id) {
+            const diff = txData.type === "income" ? txData.amount : -txData.amount;
+            return { ...a, balance: a.balance + diff };
+          }
+          return a;
+        })
+      );
+    }
+
+    // Evaluar Racha
+    const streakResult = evaluateStreakUpdate(
+      streakCount,
+      undefined,
+      txData.isAntExpense,
+      freezeAvailable
+    );
+    setStreakCount(streakResult.newStreak);
+    if (streakResult.freezeUsed) setFreezeAvailable(false);
+    if (streakResult.rescuedMoneyAdded > 0) {
+      setRescuedMoney((prev) => prev + streakResult.rescuedMoneyAdded);
+    }
+  };
+
+  const handleDeleteTransaction = (id: string) => {
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const handleAddAccount = (accountData: Omit<Account, "id" | "userId">) => {
+    const newAcc: Account = {
+      ...accountData,
+      id: `acc-${Date.now()}`,
+      userId: userEmail || "demo-user",
+    };
+    setAccounts((prev) => [...prev, newAcc]);
+  };
+
+  const handleAddGoal = (goalData: Omit<SavingsGoal, "id" | "creatorId">) => {
+    const newGoal: SavingsGoal = {
+      ...goalData,
+      id: `goal-${Date.now()}`,
+      creatorId: userEmail || "demo-user",
+      members: goalData.isCollaborative
+        ? [
+            {
+              id: `gm-${Date.now()}`,
+              goalId: `goal-${Date.now()}`,
+              userId: userEmail || "demo-user",
+              userName: "Tú (Creador)",
+              contributedAmount: 0,
+              percentageContribution: 0,
+              joinedAt: new Date().toISOString(),
+            },
+          ]
+        : undefined,
+    };
+    setGoals((prev) => [...prev, newGoal]);
+  };
+
+  const handleContributeToGoal = (goalId: string, amount: number) => {
+    setGoals((prev) =>
+      prev.map((g) => {
+        if (g.id === goalId) {
+          const newCurrent = g.currentAmount + amount;
+          const updatedMembers = g.members?.map((m) => {
+            if (m.userId === (userEmail || "demo-user")) {
+              const updatedContrib = m.contributedAmount + amount;
+              return {
+                ...m,
+                contributedAmount: updatedContrib,
+                percentageContribution: newCurrent > 0 ? (updatedContrib / newCurrent) * 100 : 0,
+              };
+            }
+            return {
+              ...m,
+              percentageContribution: newCurrent > 0 ? (m.contributedAmount / newCurrent) * 100 : 0,
+            };
+          });
+
+          return {
+            ...g,
+            currentAmount: newCurrent,
+            members: updatedMembers,
+          };
+        }
+        return g;
+      })
+    );
+
+    // Registramos la transferencia en movimientos
+    setTransactions((prev) => [
+      {
+        id: `tx-${Date.now()}`,
+        userId: userEmail || "demo-user",
+        type: "saving_transfer",
+        amount,
+        category: "otros_ingresos",
+        description: "Aporte a Meta de Ahorro",
+        isAntExpense: false,
+        installmentsTotal: 1,
+        installmentCurrent: 1,
+        transactedAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+  };
+
+  // Métricas Totales
+  const totalBalance = accounts.reduce((acc, curr) => acc + curr.balance, 0);
+  const monthlyIncome = transactions
+    .filter((t) => t.type === "income")
+    .reduce((acc, curr) => acc + curr.amount, 0);
+  const monthlyExpense = transactions
+    .filter((t) => t.type === "expense")
+    .reduce((acc, curr) => acc + curr.amount, 0);
+  const netSavings = monthlyIncome - monthlyExpense;
+
+  return (
+    <div className="min-h-screen flex flex-col pb-20 md:pb-10">
+      {/* Barra de Navegación Superior */}
+      <Navbar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
+        userEmail={userEmail}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+      />
+
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Banner de Métricas Rápidas (KPIs) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
+                Balance Total
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                <Wallet className="w-4 h-4" />
+              </div>
+            </div>
+            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white tracking-tight">
+              {formatCurrency(totalBalance)}
+            </span>
+          </div>
+
+          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
+                Ingresos del Mes
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+            <span className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-400 tracking-tight">
+              +{formatCurrency(monthlyIncome)}
+            </span>
+          </div>
+
+          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
+                Gastos del Mes
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center">
+                <TrendingDown className="w-4 h-4" />
+              </div>
+            </div>
+            <span className="text-xl sm:text-2xl font-extrabold font-mono text-rose-400 tracking-tight">
+              -{formatCurrency(monthlyExpense)}
+            </span>
+          </div>
+
+          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
+                Ahorro Neto
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
+                <PiggyBank className="w-4 h-4" />
+              </div>
+            </div>
+            <span
+              className={`text-xl sm:text-2xl font-extrabold font-mono tracking-tight ${
+                netSavings >= 0 ? "text-cyan-400" : "text-rose-400"
+              }`}
+            >
+              {formatCurrency(netSavings)}
+            </span>
+          </div>
+        </div>
+
+        {/* Coach y Racha de Gastos Hormiga */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CoachWidget
+            currentMode={coachMode}
+            onModeChange={(newMode) => {
+              setCoachMode(newMode);
+              localStorage.setItem("finpulse_coach_mode", newMode);
+            }}
+            streakCount={streakCount}
+          />
+          <AntStreakWidget
+            streakCount={streakCount}
+            rescuedMoney={rescuedMoney}
+            freezeAvailable={freezeAvailable}
+          />
+        </div>
+
+        {/* Barra de Registro Inteligente "Cero Fricción" */}
+        <QuickTransactionBar
+          accounts={accounts}
+          onSaveParsedTransaction={handleSaveParsedTransaction}
+          onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
+          onOpenManualModal={() => setIsManualModalOpen(true)}
+        />
+
+        {/* VISTAS MODULARES SEGÚN PESTAÑA ACTIVA */}
+        {activeTab === "dashboard" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+              <TransactionList
+                transactions={transactions}
+                onDeleteTransaction={handleDeleteTransaction}
+              />
+            </div>
+            <div className="space-y-6">
+              <AccountsWidget
+                accounts={accounts}
+                onAddAccount={handleAddAccount}
+              />
+              <GoalsWidget
+                goals={goals}
+                onAddGoal={handleAddGoal}
+                onContributeToGoal={handleContributeToGoal}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeTab === "transactions" && (
+          <TransactionList
+            transactions={transactions}
+            onDeleteTransaction={handleDeleteTransaction}
+          />
+        )}
+
+        {activeTab === "accounts" && (
+          <AccountsWidget
+            accounts={accounts}
+            onAddAccount={handleAddAccount}
+          />
+        )}
+
+        {activeTab === "goals" && (
+          <GoalsWidget
+            goals={goals}
+            onAddGoal={handleAddGoal}
+            onContributeToGoal={handleContributeToGoal}
+          />
+        )}
+
+        {activeTab === "reports" && (
+          <ReportsView transactions={transactions} />
+        )}
+      </main>
+
+      {/* Navegación Móvil Inferior (PWA Mobile Tab Bar) */}
+      <MobileTabBar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenQuickAction={() => setIsManualModalOpen(true)}
+      />
+
+      {/* Modales Desacoplados */}
+      <VoiceExpenseModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        accounts={accounts}
+        onConfirm={handleSaveParsedTransaction}
+      />
+
+      <TransactionFormModal
+        isOpen={isManualModalOpen}
+        onClose={() => setIsManualModalOpen(false)}
+        accounts={accounts}
+        onSave={handleSaveManualTransaction}
+      />
+
+      <ShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
+    </div>
+  );
+}
