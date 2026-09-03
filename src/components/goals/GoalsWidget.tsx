@@ -81,7 +81,8 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
     <div className="obsidian-card rounded-3xl p-5 sm:p-6 border border-purple-500/25 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-base font-bold text-white tracking-tight">
+          <h3 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_10px_#A855F7]" />
             {LABELS.goals.title}
           </h3>
           <span className="text-xs text-slate-400">
@@ -90,11 +91,14 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
         </div>
 
         <button
-          onClick={() => setIsAdding(!isAdding)}
-          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs flex items-center gap-1 transition-colors"
+          onClick={() => {
+            hapticTap();
+            setIsAdding(!isAdding);
+          }}
+          className="p-1.5 px-3 rounded-xl bg-[#0E1526] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
         >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Nueva meta</span>
+          <Plus className="w-3.5 h-3.5 text-purple-400" />
+          <span>Nueva meta</span>
         </button>
       </div>
 
@@ -102,7 +106,7 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
       {isAdding && (
         <form
           onSubmit={handleCreateGoal}
-          className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 animate-in fade-in"
+          className="p-4 rounded-2xl bg-[#070A12] border border-slate-800 space-y-3 animate-in fade-in"
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -115,7 +119,7 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
                 placeholder="Ej: Viaje a Brasil, MacBook Pro..."
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-brand-500"
+                className="w-full px-3 py-1.5 bg-[#090D18] border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
               />
             </div>
 
@@ -130,7 +134,7 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
                 placeholder="0.00"
                 value={targetAmount}
                 onChange={(e) => setTargetAmount(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-brand-500"
+                className="w-full px-3 py-1.5 bg-[#090D18] border border-slate-700 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-purple-500"
               />
             </div>
           </div>
@@ -144,7 +148,7 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
                 type="date"
                 value={targetDate}
                 onChange={(e) => setTargetDate(e.target.value)}
-                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-brand-500"
+                className="w-full px-3 py-1.5 bg-[#090D18] border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
               />
             </div>
 
@@ -154,25 +158,28 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
                 id="isCollabCheck"
                 checked={isCollaborative}
                 onChange={(e) => setIsCollaborative(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+                className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500"
               />
-              <label htmlFor="isCollabCheck" className="text-xs text-slate-300 select-none cursor-pointer">
-                Meta colaborativa (compartida con pareja/amigos)
+              <label
+                htmlFor="isCollabCheck"
+                className="text-xs text-slate-300 select-none cursor-pointer"
+              >
+                Meta Colaborativa (Pareja/Familia)
               </label>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={() => setIsAdding(false)}
-              className="px-3 py-1 rounded-lg text-xs text-slate-400 hover:text-white"
+              className="px-3 py-1 rounded-xl text-xs text-slate-400 hover:text-white"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-3.5 py-1 rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs shadow-md"
+              className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs shadow-md shadow-purple-600/30"
             >
               Crear Meta
             </button>
@@ -180,138 +187,146 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
         </form>
       )}
 
-      {/* Grid de Metas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Grid de Metas: Estructura Vertical Sin Desbordes ni Colisiones */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         {goals.map((goal) => {
           const percent = Math.min(100, (goal.currentAmount / goal.targetAmount) * 100);
-          const isCompleted = percent >= 100;
+          const isCompleted = goal.currentAmount >= goal.targetAmount;
 
           return (
             <div
               key={goal.id}
-              className={`p-4 rounded-xl border transition-all relative overflow-hidden ${
-                goal.isCollaborative
-                  ? "bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-950/30 border-cyan-500/30"
-                  : "bg-slate-950/70 border-slate-800"
-              }`}
+              className="p-4 rounded-2xl bg-[#070A12]/90 border border-slate-800 hover:border-purple-500/40 transition-all flex flex-col justify-between shadow-sm group"
             >
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-brand-400">
-                    <Trophy className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white tracking-tight">{goal.title}</h4>
-                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
+              <div>
+                {/* Cabecera: Icono + Tipo a la izquierda | Porcentaje limpio a la derecha */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-[#090D18] border border-slate-700/80 flex items-center justify-center text-purple-400 shrink-0 shadow-inner">
+                      <Trophy className="w-4 h-4" />
+                    </div>
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-300 font-bold border border-slate-700/50 flex items-center gap-1">
                       {goal.isCollaborative ? (
                         <>
                           <Users className="w-3 h-3 text-cyan-400" />
-                          <span className="text-cyan-300 font-medium">Meta Compartida</span>
+                          <span>Compartida</span>
                         </>
                       ) : (
                         <>
-                          <User className="w-3 h-3 text-slate-400" />
-                          <span>Meta Individual</span>
+                          <User className="w-3 h-3 text-purple-400" />
+                          <span>Individual</span>
                         </>
                       )}
                     </span>
                   </div>
+
+                  {/* Porcentaje en Chip Violeta (Sin Desborde) */}
+                  <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 text-xs font-mono font-black shrink-0">
+                    {formatPercentage(percent)}
+                  </span>
                 </div>
 
-                <span className="text-xs font-bold font-mono text-white">
-                  {formatPercentage(percent)}
-                </span>
-              </div>
+                {/* Título de la Meta en su Propia Línea */}
+                <div className="mt-3">
+                  <h4
+                    className="text-sm font-black text-white tracking-tight truncate"
+                    title={goal.title}
+                  >
+                    {goal.title}
+                  </h4>
+                </div>
 
-              {/* Barra de Progreso Viva */}
-              <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800 my-3">
-                <div
-                  className={`h-full transition-all duration-500 rounded-full ${
-                    isCompleted
-                      ? "bg-gradient-to-r from-emerald-400 to-cyan-400"
-                      : "bg-gradient-to-r from-brand-500 to-accent-cyan"
-                  }`}
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
+                {/* Barra de Progreso */}
+                <div className="w-full h-2.5 bg-[#090D18] rounded-full overflow-hidden border border-slate-800 my-2.5">
+                  <div
+                    className={`h-full transition-all duration-500 rounded-full ${
+                      isCompleted
+                        ? "bg-gradient-to-r from-emerald-400 to-[#00F5A0]"
+                        : "bg-gradient-to-r from-purple-500 to-[#00F5A0]"
+                    }`}
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
 
-              <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-slate-400">
-                  {formatCurrency(goal.currentAmount)}
-                </span>
-                <span className="text-white font-bold">
-                  Objetivo: {formatCurrency(goal.targetAmount)}
-                </span>
-              </div>
-
-              {/* Leaderboard en Metas Colaborativas */}
-              {goal.isCollaborative && goal.members && goal.members.length > 0 && (
-                <div className="mt-3 pt-2.5 border-t border-slate-800/80 space-y-1.5">
-                  <span className="text-[10px] uppercase font-mono text-slate-400 block font-semibold">
-                    Aportes del Equipo:
+                {/* Detalle de Montos */}
+                <div className="flex items-center justify-between text-xs font-mono pt-1">
+                  <span className="text-white font-bold">
+                    {formatCurrency(goal.currentAmount)}
                   </span>
-                  <div className="space-y-1">
-                    {goal.members.map((m) => (
-                      <div key={m.id} className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-300">{m.userName}</span>
-                        <span className="font-mono text-cyan-300 font-semibold">
-                          {formatCurrency(m.contributedAmount)} ({formatPercentage(m.percentageContribution)})
-                        </span>
-                      </div>
-                    ))}
+                  <span className="text-slate-400 text-[11px]">
+                    Meta: <span className="text-purple-300 font-semibold">{formatCurrency(goal.targetAmount)}</span>
+                  </span>
+                </div>
+
+                {/* Leaderboard en Metas Colaborativas */}
+                {goal.isCollaborative && goal.members && goal.members.length > 0 && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-800/80 space-y-1">
+                    <span className="text-[10px] uppercase font-mono text-slate-400 block font-semibold">
+                      Aportes del Equipo:
+                    </span>
+                    <div className="space-y-1">
+                      {goal.members.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-300 truncate max-w-[100px]">{m.userName}</span>
+                          <span className="font-mono text-cyan-300 font-semibold text-[10px]">
+                            {formatCurrency(m.contributedAmount)} ({formatPercentage(m.percentageContribution)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-              {/* Código de Invitación en Metas Colaborativas */}
-              {goal.isCollaborative && goal.inviteCode && (
-                <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-slate-400">
-                    Código: <strong className="text-white">{goal.inviteCode}</strong>
-                  </span>
+              {/* Acciones de la Meta (Aportar o Código) */}
+              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                {goal.isCollaborative && goal.inviteCode && (
                   <button
                     onClick={() => handleCopyCode(goal.inviteCode!)}
-                    className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                    className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+                    title="Copiar código de invitación"
                   >
-                    <Share2 className="w-3 h-3" />
-                    <span>{copiedCode === goal.inviteCode ? "¡Copiado!" : "Invitar"}</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Botón de Aportar */}
-              <div className="mt-3 pt-2 border-t border-slate-800/80 flex justify-end">
-                {contributeGoalId === goal.id ? (
-                  <div className="flex items-center gap-1.5 w-full animate-in fade-in">
-                    <input
-                      type="number"
-                      placeholder="Monto a aportar..."
-                      value={contributeAmount}
-                      onChange={(e) => setContributeAmount(e.target.value)}
-                      className="flex-1 px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono"
-                    />
-                    <button
-                      onClick={() => handleContribute(goal.id)}
-                      className="px-2.5 py-1 rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs"
-                    >
-                      Aportar
-                    </button>
-                    <button
-                      onClick={() => setContributeGoalId(null)}
-                      className="px-2 py-1 text-slate-400 text-xs hover:text-white"
-                    >
-                      X
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setContributeGoalId(goal.id)}
-                    className="text-xs px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-200 font-medium flex items-center gap-1.5 transition-colors"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-brand-400" />
-                    <span>Aportar ahorro</span>
+                    <Share2 className="w-3 h-3 text-purple-400" />
+                    <span>{copiedCode === goal.inviteCode ? "¡Copiado!" : goal.inviteCode}</span>
                   </button>
                 )}
+
+                <div className="ml-auto">
+                  {contributeGoalId === goal.id ? (
+                    <div className="flex items-center gap-1.5 w-full animate-in fade-in">
+                      <input
+                        type="number"
+                        placeholder="Monto..."
+                        value={contributeAmount}
+                        onChange={(e) => setContributeAmount(e.target.value)}
+                        className="w-24 px-2 py-1 bg-[#090D18] border border-purple-500 rounded-lg text-xs text-white font-mono"
+                      />
+                      <button
+                        onClick={() => handleContribute(goal.id)}
+                        className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs"
+                      >
+                        Sumar
+                      </button>
+                      <button
+                        onClick={() => setContributeGoalId(null)}
+                        className="px-1.5 py-1 text-slate-400 text-xs hover:text-white"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        hapticTap();
+                        setContributeGoalId(goal.id);
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-xl bg-[#0E1526] hover:bg-purple-900/40 border border-purple-500/30 text-purple-300 font-bold flex items-center gap-1 transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Aportar</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );

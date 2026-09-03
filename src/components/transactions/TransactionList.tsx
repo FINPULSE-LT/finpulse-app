@@ -82,8 +82,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
 
   return (
     <div className="obsidian-card rounded-3xl p-5 sm:p-6 border border-slate-800/80">
-      {/* Encabezado y Filtros Rápidos */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-800/70">
+      {/* Encabezado y Filtros Alineados Sin Quiebres */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-800/70">
         <div>
           <h3 className="text-base font-black text-white tracking-tight flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#00F5A0] shadow-[0_0_10px_#00F5A0]" />
@@ -94,14 +94,14 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           </p>
         </div>
 
-        {/* Botonera de Filtros con Código de Color */}
-        <div className="flex items-center gap-1.5 flex-wrap bg-[#070A12] p-1.5 rounded-2xl border border-slate-800">
+        {/* Botonera de Filtros con Scroll Horizontal si es necesario para evitar saltos de línea */}
+        <div className="flex items-center gap-1 bg-[#070A12] p-1.5 rounded-2xl border border-slate-800 overflow-x-auto no-scrollbar shrink-0">
           <button
             onClick={() => {
               hapticTap();
               setFilterType("all");
             }}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               filterType === "all"
                 ? "bg-slate-200 text-slate-950 shadow-sm"
                 : "text-slate-400 hover:text-white"
@@ -114,7 +114,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               hapticTap();
               setFilterType("expense");
             }}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               filterType === "expense"
                 ? "bg-rose-500 text-white shadow-md shadow-rose-500/25"
                 : "text-slate-400 hover:text-rose-400"
@@ -127,7 +127,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               hapticTap();
               setFilterType("income");
             }}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               filterType === "income"
                 ? "bg-[#00F5A0] text-slate-950 shadow-md shadow-[#00F5A0]/25"
                 : "text-slate-400 hover:text-[#00F5A0]"
@@ -140,7 +140,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               hapticTap();
               setFilterType("saving");
             }}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+            className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
               filterType === "saving"
                 ? "bg-purple-600 text-white shadow-md shadow-purple-500/25"
                 : "text-slate-400 hover:text-purple-400"
@@ -154,7 +154,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               hapticTap();
               setFilterType("ant");
             }}
-            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+            className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
               filterType === "ant"
                 ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25"
                 : "text-slate-400 hover:text-amber-400"
@@ -165,57 +165,57 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         </div>
       </div>
 
-      {/* Listado de Transacciones */}
+      {/* Listado de Transacciones con Alineación Perfecta */}
       <div className="divide-y divide-slate-800/60">
         {filteredTransactions.map((tx) => (
           <div
             key={tx.id}
             className="py-3 flex items-center justify-between gap-3 group hover:bg-slate-850/50 px-2 rounded-2xl transition-colors"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-10 h-10 rounded-2xl bg-[#090D18] border border-slate-800 flex items-center justify-center shrink-0 shadow-sm">
                 {getCategoryIcon(tx.category)}
               </div>
 
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-bold text-white tracking-tight">
+                  <span className="text-sm font-bold text-white tracking-tight truncate max-w-[220px] sm:max-w-xs">
                     {tx.description}
                   </span>
 
-                  {/* Badge de Meta Asignada (UX-03 Solucionado) */}
+                  {/* Badge de Meta Asignada */}
                   {tx.goalTitle && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                    <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold flex items-center gap-1 shrink-0 shadow-sm">
                       <Target className="w-3 h-3 text-purple-400" />
                       {tx.goalTitle}
                     </span>
                   )}
 
                   {tx.isAntExpense && (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold shrink-0">
                       🐜 Hormiga
                     </span>
                   )}
 
                   {tx.installmentsTotal > 1 && (
-                    <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[10px] font-bold font-mono">
+                    <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[10px] font-bold font-mono shrink-0">
                       Cuota {tx.installmentCurrent}/{tx.installmentsTotal}
                     </span>
                   )}
                 </div>
 
                 <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                  <span className="font-mono text-slate-400">{formatRelativeDate(tx.transactedAt)}</span>
+                  <span className="font-mono text-slate-400 shrink-0">{formatRelativeDate(tx.transactedAt)}</span>
                   {tx.accountName && (
                     <>
                       <span>•</span>
-                      <span className="text-slate-300 font-medium">{tx.accountName}</span>
+                      <span className="text-slate-300 font-medium truncate max-w-[120px]">{tx.accountName}</span>
                     </>
                   )}
                   {tx.notes && (
                     <>
                       <span>•</span>
-                      <span className="italic text-slate-400 truncate max-w-[140px] sm:max-w-xs">
+                      <span className="italic text-slate-400 truncate max-w-[120px] sm:max-w-xs">
                         &quot;{tx.notes}&quot;
                       </span>
                     </>
@@ -224,10 +224,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="text-right">
+            <div className="flex items-center gap-3 shrink-0 text-right">
+              <div>
                 <span
-                  className={`text-sm font-black font-mono tracking-tight ${
+                  className={`text-sm sm:text-base font-black font-mono tracking-tight ${
                     tx.type === "income"
                       ? "text-[#00F5A0]"
                       : tx.type === "saving_transfer"
