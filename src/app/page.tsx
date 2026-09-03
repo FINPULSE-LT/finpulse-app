@@ -25,7 +25,7 @@ import {
 } from "@/constants/initialData";
 import { CoachPersonalityType } from "@/constants/coach";
 import { Account, Transaction, SavingsGoal, ParsedTransactionResult } from "@/types";
-import { Wallet, TrendingUp, TrendingDown, PiggyBank, Sparkles } from "lucide-react";
+import { Wallet, TrendingUp, TrendingDown, PiggyBank } from "lucide-react";
 
 export default function HomePage() {
   // Estado Principal
@@ -50,7 +50,6 @@ export default function HomePage() {
 
   // Persistencia Local & Detección de Usuario en Supabase
   useEffect(() => {
-    // 1. Cargar datos guardados si existen en localStorage
     const savedTx = localStorage.getItem("finpulse_transactions");
     if (savedTx) {
       try {
@@ -77,7 +76,6 @@ export default function HomePage() {
       setCoachMode(savedCoach);
     }
 
-    // 2. Verificar sesión de Supabase
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
       if (data.user?.email) {
@@ -129,18 +127,61 @@ export default function HomePage() {
     onNavReports: () => setActiveTab("reports"),
   });
 
-  // Guardar Transacción Parseda por IA (Texto o Voz)
+  // Aportar a Meta de Ahorro específica
+  const handleContributeToGoal = (goalId: string, amount: number) => {
+    setGoals((prev) =>
+      prev.map((g) => {
+        if (g.id === goalId) {
+          const newCurrent = g.currentAmount + amount;
+          const updatedMembers = g.members?.map((m) => {
+            if (m.userId === (userEmail || "demo-user")) {
+              const updatedContrib = m.contributedAmount + amount;
+              return {
+                ...m,
+                contributedAmount: updatedContrib,
+                percentageContribution: newCurrent > 0 ? (updatedContrib / newCurrent) * 100 : 0,
+              };
+            }
+            return {
+              ...m,
+              percentageContribution: newCurrent > 0 ? (m.contributedAmount / newCurrent) * 100 : 0,
+            };
+          });
+
+          return {
+            ...g,
+            currentAmount: newCurrent,
+            members: updatedMembers,
+          };
+        }
+        return g;
+      })
+    );
+  };
+
+  // Guardar Transacción Parseda por IA (Texto o Voz) con soporte de Meta y Fecha
   const handleSaveParsedTransaction = (
     parsed: ParsedTransactionResult,
-    selectedAccountId?: string
+    selectedAccountId?: string,
+    targetGoalId?: string,
+    customDate?: string
   ) => {
     const acc = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
+    const targetGoal = goals.find((g) => g.id === (targetGoalId || parsed.goalId));
+
+    const finalDate = customDate
+      ? new Date(customDate).toISOString()
+      : parsed.dateSuggestion
+      ? new Date(parsed.dateSuggestion).toISOString()
+      : new Date().toISOString();
 
     const newTx: Transaction = {
       id: `tx-${Date.now()}`,
       userId: userEmail || "demo-user",
       accountId: acc ? acc.id : undefined,
       accountName: acc ? acc.name : "General",
+      goalId: targetGoal ? targetGoal.id : undefined,
+      goalTitle: targetGoal ? targetGoal.title : undefined,
       type: parsed.type,
       amount: parsed.amount,
       category: parsed.category,
@@ -148,10 +189,15 @@ export default function HomePage() {
       isAntExpense: parsed.isAntExpense,
       installmentsTotal: parsed.installmentsTotal || 1,
       installmentCurrent: 1,
-      transactedAt: new Date().toISOString(),
+      transactedAt: finalDate,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+
+    // Si es un ahorro y se seleccionó meta, transferir saldo a la meta
+    if (parsed.type === "saving_transfer" && targetGoal) {
+      handleContributeToGoal(targetGoal.id, parsed.amount);
+    }
 
     // Actualizar Saldo de Cuenta
     if (acc) {
@@ -185,14 +231,22 @@ export default function HomePage() {
     txData: Omit<Transaction, "id" | "userId">
   ) => {
     const acc = accounts.find((a) => a.id === txData.accountId);
+    const targetGoal = goals.find((g) => g.id === txData.goalId);
+
     const newTx: Transaction = {
       ...txData,
       id: `tx-${Date.now()}`,
       userId: userEmail || "demo-user",
       accountName: acc ? acc.name : undefined,
+      goalTitle: targetGoal ? targetGoal.title : txData.goalTitle,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+
+    // Si es aporte de ahorro y tiene meta asignada, incrementar la meta
+    if (txData.type === "saving_transfer" && txData.goalId) {
+      handleContributeToGoal(txData.goalId, txData.amount);
+    }
 
     // Actualizar Saldo
     if (acc) {
@@ -256,54 +310,6 @@ export default function HomePage() {
     setGoals((prev) => [...prev, newGoal]);
   };
 
-  const handleContributeToGoal = (goalId: string, amount: number) => {
-    setGoals((prev) =>
-      prev.map((g) => {
-        if (g.id === goalId) {
-          const newCurrent = g.currentAmount + amount;
-          const updatedMembers = g.members?.map((m) => {
-            if (m.userId === (userEmail || "demo-user")) {
-              const updatedContrib = m.contributedAmount + amount;
-              return {
-                ...m,
-                contributedAmount: updatedContrib,
-                percentageContribution: newCurrent > 0 ? (updatedContrib / newCurrent) * 100 : 0,
-              };
-            }
-            return {
-              ...m,
-              percentageContribution: newCurrent > 0 ? (m.contributedAmount / newCurrent) * 100 : 0,
-            };
-          });
-
-          return {
-            ...g,
-            currentAmount: newCurrent,
-            members: updatedMembers,
-          };
-        }
-        return g;
-      })
-    );
-
-    // Registramos la transferencia en movimientos
-    setTransactions((prev) => [
-      {
-        id: `tx-${Date.now()}`,
-        userId: userEmail || "demo-user",
-        type: "saving_transfer",
-        amount,
-        category: "otros_ingresos",
-        description: "Aporte a Meta de Ahorro",
-        isAntExpense: false,
-        installmentsTotal: 1,
-        installmentCurrent: 1,
-        transactedAt: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
-  };
-
   // Métricas Totales
   const totalBalance = accounts.reduce((acc, curr) => acc + curr.balance, 0);
   const monthlyIncome = transactions
@@ -326,14 +332,14 @@ export default function HomePage() {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Banner de Métricas Rápidas (KPIs) */}
+        {/* Banner de Métricas Rápidas (KPIs) con Estilo Obsidian FinTech */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
+              <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
                 Balance Total
               </span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center shadow-sm">
                 <Wallet className="w-4 h-4" />
               </div>
             </div>
@@ -342,12 +348,12 @@ export default function HomePage() {
             </span>
           </div>
 
-          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
-                Ingresos del Mes
+              <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
+                Ingresos Mes
               </span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shadow-sm">
                 <TrendingUp className="w-4 h-4" />
               </div>
             </div>
@@ -356,12 +362,12 @@ export default function HomePage() {
             </span>
           </div>
 
-          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
-                Gastos del Mes
+              <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
+                Gastos Mes
               </span>
-              <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center shadow-sm">
                 <TrendingDown className="w-4 h-4" />
               </div>
             </div>
@@ -370,12 +376,12 @@ export default function HomePage() {
             </span>
           </div>
 
-          <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono text-slate-400 uppercase font-semibold">
+              <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
                 Ahorro Neto
               </span>
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center shadow-sm">
                 <PiggyBank className="w-4 h-4" />
               </div>
             </div>
@@ -409,6 +415,7 @@ export default function HomePage() {
         {/* Barra de Registro Inteligente "Cero Fricción" */}
         <QuickTransactionBar
           accounts={accounts}
+          goals={goals}
           onSaveParsedTransaction={handleSaveParsedTransaction}
           onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
           onOpenManualModal={() => setIsManualModalOpen(true)}
@@ -483,6 +490,7 @@ export default function HomePage() {
         isOpen={isManualModalOpen}
         onClose={() => setIsManualModalOpen(false)}
         accounts={accounts}
+        goals={goals}
         onSave={handleSaveManualTransaction}
       />
 

@@ -1,6 +1,6 @@
 /**
  * Motor de Interpretación de Lenguaje Natural (IA Heurística + LLM)
- * Extrae monto, categoría, comercio, medio de pago, cuotas y clasificador de gasto hormiga.
+ * Extrae monto, categoría, comercio, medio de pago, cuotas, fechas relativas y clasificador de gasto hormiga.
  */
 import { ParsedTransactionResult, TransactionType } from "@/types";
 import { CATEGORIES } from "@/constants/categories";
@@ -17,8 +17,12 @@ const INCOME_KEYWORDS = [
   "transferencia recibida", "dividendo", "rendimiento", "venta", "regalo"
 ];
 
+const SAVING_KEYWORDS = [
+  "ahorro", "ahorre", "ahorré", "guardé", "guarde", "meta", "vacaciones",
+  "fondo", "alcancia", "aparté", "deposito para"
+];
+
 const INSTALLMENT_REGEX = /(?:en\s+)?(\d{1,2})\s*(?:cuotas?|pagos?)/i;
-const AMOUNT_REGEX = /(?:\$|\s|^)(\d+(?:[.,]\d{1,3})*(?:[.,]\d{2})?)(?:\s|$)/;
 
 export function parseTransactionTextLocally(rawText: string): ParsedTransactionResult {
   const clean = rawText.trim().toLowerCase();
@@ -30,12 +34,34 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     installmentsTotal = parseInt(installmentMatch[1], 10) || 1;
   }
 
-  // 2. Detección de Monto
-  // Busca números grandes o con formato de precio
+  // 2. Detección de Fecha Relativa ("ayer", "anteayer", "hace X días")
+  let dateSuggestion: string | undefined = undefined;
+  const today = new Date();
+
+  if (clean.includes("anteayer") || clean.includes("antes de ayer")) {
+    const d = new Date();
+    d.setDate(today.getDate() - 2);
+    dateSuggestion = d.toISOString().split("T")[0];
+  } else if (clean.includes("ayer")) {
+    const d = new Date();
+    d.setDate(today.getDate() - 1);
+    dateSuggestion = d.toISOString().split("T")[0];
+  } else {
+    const daysAgoMatch = clean.match(/hace\s+(\d{1,2})\s+d[ií]as/);
+    if (daysAgoMatch && daysAgoMatch[1]) {
+      const days = parseInt(daysAgoMatch[1], 10);
+      if (days > 0 && days < 60) {
+        const d = new Date();
+        d.setDate(today.getDate() - days);
+        dateSuggestion = d.toISOString().split("T")[0];
+      }
+    }
+  }
+
+  // 3. Detección de Monto
   let amount = 0;
   const numbers = clean.match(/\d+(?:[.,]\d{3})*(?:[.,]\d{1,2})?/g);
   if (numbers && numbers.length > 0) {
-    // Tomamos el número más probable que no sea la cantidad de cuotas
     for (const numStr of numbers) {
       const parsedNum = parseFloat(numStr.replace(/\./g, "").replace(",", "."));
       if (parsedNum !== installmentsTotal && parsedNum > 0) {
@@ -48,17 +74,24 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     }
   }
 
-  // 3. Detección de Tipo (Ingreso vs Gasto)
-  const isIncome = INCOME_KEYWORDS.some((kw) => clean.includes(kw));
-  const type: TransactionType = isIncome ? "income" : "expense";
+  // 4. Detección de Tipo (Ingreso vs Gasto vs Ahorro a Meta)
+  const isSaving = SAVING_KEYWORDS.some((kw) => clean.includes(kw));
+  const isIncome = !isSaving && INCOME_KEYWORDS.some((kw) => clean.includes(kw));
+  
+  let type: TransactionType = "expense";
+  if (isSaving) {
+    type = "saving_transfer";
+  } else if (isIncome) {
+    type = "income";
+  }
 
-  // 4. Detección de Gasto Hormiga
-  const isAntExpense = !isIncome && ANT_EXPENSE_KEYWORDS.some((kw) => clean.includes(kw));
+  // 5. Detección de Gasto Hormiga
+  const isAntExpense = type === "expense" && ANT_EXPENSE_KEYWORDS.some((kw) => clean.includes(kw));
 
-  // 5. Asignación de Categoría Inteligente
-  let matchedCategory = type === "income" ? "salario" : "imprevistos";
+  // 6. Asignación de Categoría Inteligente
+  let matchedCategory = type === "income" ? "salario" : type === "saving_transfer" ? "otros_ingresos" : "imprevistos";
 
-  if (isIncome) {
+  if (type === "income") {
     if (clean.includes("honorario") || clean.includes("cliente") || clean.includes("freelance")) {
       matchedCategory = "freelance_honorarios";
     } else if (clean.includes("inversi") || clean.includes("dividendo") || clean.includes("interes")) {
@@ -66,7 +99,7 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     } else {
       matchedCategory = "salario";
     }
-  } else {
+  } else if (type === "expense") {
     if (isAntExpense) {
       if (clean.includes("delivery") || clean.includes("rappi") || clean.includes("pedidosya") || clean.includes("helado")) {
         matchedCategory = "delivery_comida";
@@ -90,7 +123,7 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     }
   }
 
-  // 6. Sugerencia de Medio de Pago
+  // 7. Sugerencia de Medio de Pago
   let accountSuggestion: string | undefined = undefined;
   if (clean.includes("efectivo") || clean.includes("cash")) {
     accountSuggestion = "Efectivo";
@@ -102,10 +135,16 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     accountSuggestion = "Tarjeta Crédito";
   }
 
-  // 7. Descripción Limpia
+  // 8. Descripción Limpia (removiendo términos de fecha y cuotas)
   let description = rawText;
-  // Si encontramos un texto descriptivo
-  const words = rawText.split(/\s+/).filter((w) => !w.match(/^\d+$/) && !w.toLowerCase().includes("cuota"));
+  const words = rawText
+    .split(/\s+/)
+    .filter(
+      (w) =>
+        !w.match(/^\d+$/) &&
+        !w.toLowerCase().includes("cuota") &&
+        !["ayer", "anteayer", "hoy", "hace"].includes(w.toLowerCase())
+    );
   if (words.length > 0) {
     description = words.slice(0, 4).join(" ");
   }
@@ -117,8 +156,9 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     description: description.charAt(0).toUpperCase() + description.slice(1),
     isAntExpense,
     accountSuggestion,
+    dateSuggestion,
     installmentsTotal,
-    confidence: amount > 0 ? 0.85 : 0.4,
+    confidence: amount > 0 ? 0.88 : 0.4,
     rawText,
   };
 }

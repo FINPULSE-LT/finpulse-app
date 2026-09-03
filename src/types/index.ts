@@ -41,6 +41,8 @@ export interface Transaction {
   userId: string;
   accountId?: string;
   accountName?: string;
+  goalId?: string; // Meta de ahorro asignada si es saving_transfer
+  goalTitle?: string;
   type: TransactionType;
   amount: number;
   category: string;
@@ -87,6 +89,9 @@ export interface ParsedTransactionResult {
   description: string;
   isAntExpense: boolean;
   accountSuggestion?: string;
+  goalId?: string;
+  goalTitle?: string;
+  dateSuggestion?: string; // YYYY-MM-DD si se detecta en el texto (ej. "ayer")
   installmentsTotal: number;
   confidence: number;
   rawText: string;
