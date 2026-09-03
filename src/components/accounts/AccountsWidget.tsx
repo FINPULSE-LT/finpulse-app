@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Account } from "@/types";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { LABELS } from "@/constants/labels";
+import { useHaptics } from "@/hooks/useHaptics";
 import { CreditCard, Wallet, Landmark, Banknote, Plus, Calendar, Clock } from "lucide-react";
 
 interface AccountsWidgetProps {
@@ -23,6 +24,8 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
   const [dueDay, setDueDay] = useState("30");
   const [colorHex, setColorHex] = useState("#10b981");
 
+  const { hapticTap, hapticSuccess } = useHaptics();
+
   const getAccountIcon = (type: Account["accountType"]) => {
     switch (type) {
       case "credit_card":
@@ -30,7 +33,7 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
       case "wallet":
         return <Wallet className="w-5 h-5 text-purple-400" />;
       case "cash":
-        return <Banknote className="w-5 h-5 text-emerald-400" />;
+        return <Banknote className="w-5 h-5 text-[#00F5A0]" />;
       default:
         return <Landmark className="w-5 h-5 text-blue-400" />;
     }
@@ -40,6 +43,7 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
+    hapticSuccess();
     onAddAccount({
       name: name.trim(),
       accountType,
@@ -55,7 +59,7 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
   };
 
   return (
-    <div className="glass-card rounded-2xl p-5 border border-slate-800 space-y-4">
+    <div className="obsidian-card rounded-3xl p-5 sm:p-6 border border-blue-500/25 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-white tracking-tight">

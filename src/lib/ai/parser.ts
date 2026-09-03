@@ -2,7 +2,7 @@
  * Motor de Interpretación de Lenguaje Natural (IA Heurística + LLM)
  * Extrae monto, categoría, comercio, medio de pago, cuotas, fechas relativas y clasificador de gasto hormiga.
  */
-import { ParsedTransactionResult, TransactionType } from "@/types";
+import { ParsedTransactionResult, TransactionType, Account } from "@/types";
 import { CATEGORIES } from "@/constants/categories";
 
 const ANT_EXPENSE_KEYWORDS = [
@@ -19,7 +19,7 @@ const INCOME_KEYWORDS = [
 
 const SAVING_KEYWORDS = [
   "ahorro", "ahorre", "ahorré", "guardé", "guarde", "meta", "vacaciones",
-  "fondo", "alcancia", "aparté", "deposito para"
+  "fondo", "alcancia", "aparté", "deposito para", "destiné"
 ];
 
 const INSTALLMENT_REGEX = /(?:en\s+)?(\d{1,2})\s*(?:cuotas?|pagos?)/i;
@@ -123,16 +123,26 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     }
   }
 
-  // 7. Sugerencia de Medio de Pago
+  // 7. Sugerencia de Medio de Pago Precisa (por franquicia o nombre)
   let accountSuggestion: string | undefined = undefined;
-  if (clean.includes("efectivo") || clean.includes("cash")) {
-    accountSuggestion = "Efectivo";
+  if (clean.includes("visa")) {
+    accountSuggestion = "visa";
+  } else if (clean.includes("master") || clean.includes("mastercard")) {
+    accountSuggestion = "mastercard";
+  } else if (clean.includes("santander")) {
+    accountSuggestion = "santander";
+  } else if (clean.includes("galicia")) {
+    accountSuggestion = "galicia";
   } else if (clean.includes("mercadopago") || clean.includes("mercado pago") || clean.includes("mp")) {
-    accountSuggestion = "MercadoPago";
+    accountSuggestion = "mercadopago";
+  } else if (clean.includes("uala") || clean.includes("ualá")) {
+    accountSuggestion = "uala";
+  } else if (clean.includes("efectivo") || clean.includes("cash")) {
+    accountSuggestion = "efectivo";
   } else if (clean.includes("debito") || clean.includes("débito")) {
-    accountSuggestion = "Tarjeta Débito";
-  } else if (clean.includes("visa") || clean.includes("master") || clean.includes("credito") || clean.includes("crédito")) {
-    accountSuggestion = "Tarjeta Crédito";
+    accountSuggestion = "debito";
+  } else if (clean.includes("credito") || clean.includes("crédito") || clean.includes("tarjeta")) {
+    accountSuggestion = "credito";
   }
 
   // 8. Descripción Limpia (removiendo términos de fecha y cuotas)
@@ -161,4 +171,59 @@ export function parseTransactionTextLocally(rawText: string): ParsedTransactionR
     confidence: amount > 0 ? 0.88 : 0.4,
     rawText,
   };
+}
+
+/**
+ * Emparejador Inteligente de Cuentas y Tarjetas
+ * Cruza la sugerencia del parser con la base de cuentas del usuario por:
+ * nombre, franquicia (Visa/Mastercard) y tipo de cuenta.
+ */
+export function matchAccountFromSuggestion(
+  suggestion: string | undefined,
+  accounts: Account[]
+): Account | undefined {
+  if (!suggestion || accounts.length === 0) return undefined;
+  const s = suggestion.toLowerCase();
+
+  // 1. Coincidencia directa por nombre (ej: "Visa Santander", "Galicia Débito")
+  const byName = accounts.find((a) => a.name.toLowerCase().includes(s));
+  if (byName) return byName;
+
+  // 2. Coincidencia por franquicia de tarjeta
+  if (s === "visa") {
+    const visa = accounts.find(
+      (a) => a.cardNetwork === "visa" || a.name.toLowerCase().includes("visa")
+    );
+    if (visa) return visa;
+  }
+  if (s === "mastercard") {
+    const master = accounts.find(
+      (a) => a.cardNetwork === "mastercard" || a.name.toLowerCase().includes("master")
+    );
+    if (master) return master;
+  }
+
+  // 3. Coincidencia por tipo de cuenta
+  if (s === "credito") {
+    const cred = accounts.find((a) => a.accountType === "credit_card");
+    if (cred) return cred;
+  }
+  if (s === "debito") {
+    const deb = accounts.find(
+      (a) => a.accountType === "bank" || a.name.toLowerCase().includes("débito") || a.name.toLowerCase().includes("debito")
+    );
+    if (deb) return deb;
+  }
+  if (s === "mercadopago" || s === "mp") {
+    const wallet = accounts.find(
+      (a) => a.accountType === "wallet" || a.name.toLowerCase().includes("mercado")
+    );
+    if (wallet) return wallet;
+  }
+  if (s === "efectivo") {
+    const cash = accounts.find((a) => a.accountType === "cash");
+    if (cash) return cash;
+  }
+
+  return undefined;
 }

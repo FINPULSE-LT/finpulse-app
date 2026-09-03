@@ -3,6 +3,7 @@
 import React from "react";
 import { BrandLogo } from "@/components/branding/BrandLogo";
 import { LABELS } from "@/constants/labels";
+import { useHaptics } from "@/hooks/useHaptics";
 import { Command, UserCircle2, LogIn, LayoutDashboard, ReceiptText, CreditCard, Trophy, BarChart3 } from "lucide-react";
 
 interface NavbarProps {
@@ -20,21 +21,28 @@ export const Navbar: React.FC<NavbarProps> = ({
   userEmail,
   onOpenAuthModal,
 }) => {
+  const { hapticTap } = useHaptics();
+
+  const handleTabClick = (tab: "dashboard" | "transactions" | "accounts" | "goals" | "reports") => {
+    hapticTap();
+    onTabChange(tab);
+  };
+
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
+    <header className="sticky top-0 z-40 border-b border-slate-800/90 bg-[#090D18]/90 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Logo */}
-        <div className="cursor-pointer" onClick={() => onTabChange("dashboard")}>
+        {/* Logo Oficial FinPulse */}
+        <div onClick={() => handleTabClick("dashboard")}>
           <BrandLogo size="sm" showTagline={false} />
         </div>
 
-        {/* Desktop Navigation Links */}
-        <nav className="hidden md:flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-800">
+        {/* Desktop Navigation Links con Código de Color Funcional */}
+        <nav className="hidden md:flex items-center gap-1.5 bg-[#070A12]/80 p-1.5 rounded-2xl border border-slate-800">
           <button
-            onClick={() => onTabChange("dashboard")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
+            onClick={() => handleTabClick("dashboard")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
               activeTab === "dashboard"
-                ? "bg-brand-500 text-slate-950 font-bold shadow-sm"
+                ? "bg-[#00F5A0] text-slate-950 font-black shadow-md shadow-[#00F5A0]/25"
                 : "text-slate-400 hover:text-white"
             }`}
           >
@@ -43,11 +51,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => onTabChange("transactions")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
+            onClick={() => handleTabClick("transactions")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
               activeTab === "transactions"
-                ? "bg-brand-500 text-slate-950 font-bold shadow-sm"
-                : "text-slate-400 hover:text-white"
+                ? "bg-rose-500 text-white font-black shadow-md shadow-rose-500/25"
+                : "text-slate-400 hover:text-rose-400"
             }`}
           >
             <ReceiptText className="w-3.5 h-3.5" />
@@ -55,11 +63,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => onTabChange("accounts")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
+            onClick={() => handleTabClick("accounts")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
               activeTab === "accounts"
-                ? "bg-brand-500 text-slate-950 font-bold shadow-sm"
-                : "text-slate-400 hover:text-white"
+                ? "bg-blue-600 text-white font-black shadow-md shadow-blue-500/25"
+                : "text-slate-400 hover:text-blue-400"
             }`}
           >
             <CreditCard className="w-3.5 h-3.5" />
@@ -67,11 +75,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => onTabChange("goals")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
+            onClick={() => handleTabClick("goals")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
               activeTab === "goals"
-                ? "bg-brand-500 text-slate-950 font-bold shadow-sm"
-                : "text-slate-400 hover:text-white"
+                ? "bg-purple-600 text-white font-black shadow-md shadow-purple-500/25"
+                : "text-slate-400 hover:text-purple-400"
             }`}
           >
             <Trophy className="w-3.5 h-3.5" />
@@ -79,11 +87,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => onTabChange("reports")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
+            onClick={() => handleTabClick("reports")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
               activeTab === "reports"
-                ? "bg-brand-500 text-slate-950 font-bold shadow-sm"
-                : "text-slate-400 hover:text-white"
+                ? "bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/25"
+                : "text-slate-400 hover:text-cyan-400"
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5" />
@@ -95,8 +103,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2.5">
           {/* Botón de Atajos */}
           <button
-            onClick={onOpenShortcuts}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-colors"
+            onClick={() => {
+              hapticTap();
+              onOpenShortcuts();
+            }}
+            className="p-2.5 rounded-xl bg-[#0E1526] hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-colors"
             title="Ver atajos de teclado (?)"
           >
             <Command className="w-4 h-4" />
@@ -105,7 +116,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Estado de Usuario */}
           {userEmail ? (
             <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-              <div className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold text-xs border border-brand-500/30">
+              <div className="w-8 h-8 rounded-full bg-[#00F5A0]/20 text-[#00F5A0] flex items-center justify-center font-bold text-xs border border-[#00F5A0]/40">
                 {userEmail.charAt(0).toUpperCase()}
               </div>
               <span className="text-xs text-slate-300 hidden lg:inline max-w-[120px] truncate">
@@ -114,10 +125,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           ) : (
             <button
-              onClick={onOpenAuthModal}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 flex items-center gap-1.5 transition-colors"
+              onClick={() => {
+                hapticTap();
+                if (onOpenAuthModal) onOpenAuthModal();
+              }}
+              className="px-3 py-1.5 rounded-xl bg-[#0E1526] hover:bg-slate-850 border border-slate-800 text-xs text-slate-200 flex items-center gap-1.5 transition-colors font-bold"
             >
-              <LogIn className="w-3.5 h-3.5 text-brand-400" />
+              <LogIn className="w-3.5 h-3.5 text-[#00F5A0]" />
               <span>{LABELS.nav.login}</span>
             </button>
           )}

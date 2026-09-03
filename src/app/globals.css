@@ -3,73 +3,83 @@
 @tailwind utilities;
 
 :root {
-  --background: #06090e;
+  --background: #090D18;
   --foreground: #f8fafc;
-  --radius: 1rem;
+  --radius: 1.25rem;
 }
 
 body {
-  background-color: var(--background);
+  background-color: #090D18;
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Plus Jakarta Sans", sans-serif;
   overflow-x: hidden;
   background-image: 
-    radial-gradient(circle at 15% 10%, rgba(0, 242, 254, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 15%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 50% 80%, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+    radial-gradient(circle at 12% 8%, rgba(0, 245, 160, 0.10) 0%, transparent 45%),
+    radial-gradient(circle at 88% 12%, rgba(0, 217, 245, 0.10) 0%, transparent 45%),
+    radial-gradient(circle at 50% 85%, rgba(139, 92, 246, 0.08) 0%, transparent 55%);
   background-attachment: fixed;
 }
 
-/* High-Contrast Obsidian Glassmorphism */
+/* High-Contrast Obsidian Glassmorphism with Brand Depth */
 .obsidian-panel {
-  background: rgba(11, 15, 25, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(13, 19, 34, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
   border-left: 1px solid rgba(255, 255, 255, 0.06);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
-  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
 }
 
 .obsidian-card {
-  background: linear-gradient(180deg, rgba(16, 23, 38, 0.7) 0%, rgba(10, 14, 24, 0.85) 100%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 1px solid rgba(255, 255, 255, 0.04);
-  border-right: 1px solid rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.5);
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  background: linear-gradient(180deg, rgba(20, 29, 52, 0.75) 0%, rgba(12, 17, 30, 0.9) 100%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.55);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .obsidian-card:hover {
   transform: translateY(-2px);
-  border-top-color: rgba(0, 242, 254, 0.3);
-  box-shadow: 0 16px 35px -10px rgba(0, 242, 254, 0.12), 0 0 20px -5px rgba(0, 242, 254, 0.1);
+  border-top-color: rgba(0, 245, 160, 0.4);
+  box-shadow: 0 18px 40px -10px rgba(0, 245, 160, 0.15), 0 0 25px -5px rgba(0, 245, 160, 0.1);
 }
 
 /* Neon Glow Indicators */
-.neon-cyan-glow {
-  box-shadow: 0 0 25px -4px rgba(0, 242, 254, 0.35);
+.neon-mint-glow {
+  box-shadow: 0 0 30px -4px rgba(0, 245, 160, 0.4);
 }
 
-.neon-emerald-glow {
-  box-shadow: 0 0 25px -4px rgba(16, 185, 129, 0.35);
+.neon-cyan-glow {
+  box-shadow: 0 0 30px -4px rgba(0, 217, 245, 0.4);
+}
+
+.neon-purple-glow {
+  box-shadow: 0 0 30px -4px rgba(168, 85, 247, 0.4);
 }
 
 .neon-amber-glow {
-  box-shadow: 0 0 25px -4px rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 30px -4px rgba(245, 158, 11, 0.4);
 }
 
 .neon-rose-glow {
-  box-shadow: 0 0 25px -4px rgba(244, 63, 94, 0.35);
+  box-shadow: 0 0 30px -4px rgba(255, 77, 109, 0.4);
 }
 
-/* Shimmer Accent Line */
-.shimmer-line {
-  background: linear-gradient(90deg, transparent, rgba(0, 242, 254, 0.6), transparent);
+/* Shimmer Brand Gradient */
+.brand-gradient {
+  background: linear-gradient(135deg, #00F5A0 0%, #00D9F5 100%);
+}
+
+.brand-gradient-text {
+  background: linear-gradient(135deg, #00F5A0 0%, #00D9F5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 /* Custom Scrollbar */
@@ -78,12 +88,12 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #06090e;
+  background: #090D18;
 }
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #00f2fe;
+  background: #00F5A0;
 }

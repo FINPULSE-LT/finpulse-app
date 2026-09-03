@@ -7,7 +7,8 @@ export const metadata: Metadata = {
   description: BRANDING.shortDescription,
   manifest: "/manifest.json",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/brand/finpulse-logo.jpg",
+    apple: "/brand/finpulse-logo.jpg",
   },
 };
 

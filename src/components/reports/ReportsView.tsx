@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Transaction } from "@/types";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import { useHaptics } from "@/hooks/useHaptics";
 import { LABELS } from "@/constants/labels";
 import { CATEGORIES } from "@/constants/categories";
 import {
@@ -18,6 +19,7 @@ import {
   Zap,
   CheckCircle2,
   AlertTriangle,
+  Target,
 } from "lucide-react";
 
 interface ReportsViewProps {
@@ -26,19 +28,28 @@ interface ReportsViewProps {
 
 export type TimeRange = "day" | "week" | "month" | "year";
 
+// Helper de fecha local para evitar desfase de huso horario UTC (TECH-06)
+function getLocalDateString(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>("month");
-  const [selectedDay, setSelectedDay] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
+  const [selectedDay, setSelectedDay] = useState<string>(getLocalDateString(new Date()));
+  const { hapticTap } = useHaptics();
 
   const now = new Date();
-  const todayStr = now.toISOString().split("T")[0];
+  const todayStr = getLocalDateString(now);
 
-  // Filtrado según período
+  // Filtrado según período con fecha local
   const filteredTransactions = transactions.filter((t) => {
     const tDate = new Date(t.transactedAt);
-    const tDateStr = t.transactedAt.split("T")[0];
+    const tDateStr = getLocalDateString(tDate);
 
     if (timeRange === "day") {
       return tDateStr === selectedDay;
@@ -64,171 +75,243 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
     return true;
   });
 
-  // Totales del período seleccionado
+  // Cálculos de KPIs
   const totalIncome = filteredTransactions
     .filter((t) => t.type === "income")
-    .reduce((acc, curr) => acc + curr.amount, 0);
+    .reduce((acc, t) => acc + t.amount, 0);
 
   const totalExpense = filteredTransactions
     .filter((t) => t.type === "expense")
-    .reduce((acc, curr) => acc + curr.amount, 0);
+    .reduce((acc, t) => acc + t.amount, 0);
 
-  const totalAntExpense = filteredTransactions
-    .filter((t) => t.type === "expense" && t.isAntExpense)
-    .reduce((acc, curr) => acc + curr.amount, 0);
-
-  const totalSavings = filteredTransactions
+  const totalSavingsTransferred = filteredTransactions
     .filter((t) => t.type === "saving_transfer")
-    .reduce((acc, curr) => acc + curr.amount, 0);
+    .reduce((acc, t) => acc + t.amount, 0);
 
-  const netBalance = totalIncome - totalExpense;
+  const antExpensesTotal = filteredTransactions
+    .filter((t) => t.isAntExpense)
+    .reduce((acc, t) => acc + t.amount, 0);
 
-  // Desglose por Categoría del período
-  const expensesByCategory: Record<string, number> = {};
+  const netBalance = totalIncome - totalExpense - totalSavingsTransferred;
+  const savingsRate =
+    totalIncome > 0
+      ? Math.max(0, ((totalIncome - totalExpense) / totalIncome) * 100)
+      : 0;
+
+  // Desglose por categorías de gastos
+  const categoryTotals: Record<string, number> = {};
   filteredTransactions
     .filter((t) => t.type === "expense")
     .forEach((t) => {
-      expensesByCategory[t.category] =
-        (expensesByCategory[t.category] || 0) + t.amount;
+      categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
     });
 
-  const categoryBreakdown = Object.entries(expensesByCategory)
-    .map(([catId, total]) => {
-      const catDef = CATEGORIES.find((c) => c.id === catId);
+  const categoryBreakdown = Object.entries(categoryTotals)
+    .map(([catId, amount]) => {
+      const catMeta = CATEGORIES.find((c) => c.id === catId);
       return {
         id: catId,
-        name: catDef ? catDef.name : catId,
-        color: catDef ? catDef.color : "#94a3b8",
-        total,
-        percentage: totalExpense > 0 ? (total / totalExpense) * 100 : 0,
+        name: catMeta?.name || catId,
+        total: amount,
+        color: catMeta?.color || "#94a3b8",
+        percentage: totalExpense > 0 ? (amount / totalExpense) * 100 : 0,
       };
     })
     .sort((a, b) => b.total - a.total);
 
-  // Datos para vista Semanal: 7 días
-  const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-  const weekDayData = Array.from({ length: 7 }, (_, i) => {
+  // Datos para gráfico semanal (7 días)
+  const daysOfWeek = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const weekData = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(now.getDate() - (6 - i));
-    const dStr = d.toISOString().split("T")[0];
-    const dayExpenses = transactions
-      .filter((t) => t.type === "expense" && t.transactedAt.startsWith(dStr))
-      .reduce((acc, curr) => acc + curr.amount, 0);
+    const dayStr = getLocalDateString(d);
+    const dayTotal = transactions
+      .filter((t) => t.type === "expense" && getLocalDateString(t.transactedAt) === dayStr)
+      .reduce((acc, t) => acc + t.amount, 0);
+
     return {
-      name: dayNames[d.getDay() === 0 ? 6 : d.getDay() - 1],
-      date: dStr,
-      amount: dayExpenses,
-      isToday: dStr === todayStr,
+      dayName: daysOfWeek[d.getDay()],
+      dateStr: dayStr,
+      amount: dayTotal,
+      isToday: dayStr === todayStr,
     };
   });
-  const maxWeekAmount = Math.max(...weekDayData.map((w) => w.amount), 1);
+  const maxWeekAmount = Math.max(...weekData.map((d) => d.amount), 1);
 
-  // Datos para vista Anual: 12 meses
+  // UX-02: Datos para gráfico de Semanas del Mes en Curso (4 Bloques)
+  const currentMonthDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const monthWeeksData = [
+    { label: "Sem 1 (1-7)", start: 1, end: 7 },
+    { label: "Sem 2 (8-14)", start: 8, end: 14 },
+    { label: "Sem 3 (15-21)", start: 15, end: 21 },
+    { label: `Sem 4 (22-${currentMonthDays})`, start: 22, end: currentMonthDays },
+  ].map((w) => {
+    const totalExp = transactions
+      .filter((t) => {
+        const d = new Date(t.transactedAt);
+        return (
+          t.type === "expense" &&
+          d.getMonth() === now.getMonth() &&
+          d.getFullYear() === now.getFullYear() &&
+          d.getDate() >= w.start &&
+          d.getDate() <= w.end
+        );
+      })
+      .reduce((acc, t) => acc + t.amount, 0);
+    return { ...w, amount: totalExp };
+  });
+  const maxMonthWeekAmount = Math.max(...monthWeeksData.map((w) => w.amount), 1);
+
+  // Datos para gráfico anual (12 meses)
   const monthNames = [
     "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-    "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
+    "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
   ];
-  const yearMonthData = Array.from({ length: 12 }, (_, monthIdx) => {
-    const monthExpenses = transactions
+  const yearData = monthNames.map((name, idx) => {
+    const inc = transactions
       .filter((t) => {
         const d = new Date(t.transactedAt);
-        return d.getFullYear() === now.getFullYear() && d.getMonth() === monthIdx && t.type === "expense";
+        return (
+          t.type === "income" &&
+          d.getMonth() === idx &&
+          d.getFullYear() === now.getFullYear()
+        );
       })
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, t) => acc + t.amount, 0);
 
-    const monthIncomes = transactions
+    const exp = transactions
       .filter((t) => {
         const d = new Date(t.transactedAt);
-        return d.getFullYear() === now.getFullYear() && d.getMonth() === monthIdx && t.type === "income";
+        return (
+          t.type === "expense" &&
+          d.getMonth() === idx &&
+          d.getFullYear() === now.getFullYear()
+        );
       })
-      .reduce((acc, curr) => acc + curr.amount, 0);
+      .reduce((acc, t) => acc + t.amount, 0);
 
     return {
-      month: monthNames[monthIdx],
-      expenses: monthExpenses,
-      incomes: monthIncomes,
-      isCurrentMonth: monthIdx === now.getMonth(),
+      month: name,
+      income: inc,
+      expense: exp,
+      isCurrentMonth: idx === now.getMonth(),
     };
   });
   const maxYearAmount = Math.max(
-    ...yearMonthData.map((m) => Math.max(m.expenses, m.incomes)),
+    ...yearData.map((d) => Math.max(d.income, d.expense)),
     1
   );
 
-  const handleExportCsv = () => {
-    const headers = "ID,Fecha,Tipo,Descripcion,Categoria,Monto,Cuenta,GastoHormiga,Meta\n";
-    const rows = filteredTransactions
-      .map(
-        (t) =>
-          `"${t.id}","${t.transactedAt}","${t.type}","${t.description}","${t.category}",${t.amount},"${t.accountName || ""}",${t.isAntExpense},"${t.goalTitle || ""}"`
-      )
-      .join("\n");
-    const blob = new Blob([headers + rows], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+  // Exportar a CSV
+  const handleExportCSV = () => {
+    hapticTap();
+    const headers = [
+      "ID",
+      "Fecha",
+      "Tipo",
+      "Descripción",
+      "Categoría",
+      "Monto",
+      "Cuenta",
+      "Es Gasto Hormiga",
+      "Meta de Ahorro",
+    ];
+    const rows = filteredTransactions.map((t) => [
+      t.id,
+      t.transactedAt,
+      t.type,
+      `"${t.description.replace(/"/g, '""')}"`,
+      t.category,
+      t.amount,
+      t.accountName || "",
+      t.isAntExpense ? "SI" : "NO",
+      t.goalTitle || "",
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `finpulse_reporte_${timeRange}.csv`);
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `finpulse_reporte_${timeRange}_${new Date().toISOString().split("T")[0]}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   return (
-    <div className="obsidian-card rounded-3xl p-5 sm:p-7 space-y-6">
-      {/* Header & Filtro de 4 Períodos (Diario, Semanal, Mensual, Anual) */}
+    <div className="obsidian-panel rounded-3xl p-5 sm:p-7 space-y-6 border border-slate-800/80">
+      {/* Barra de Título, Filtros Temporales y Botón de Exportar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
         <div>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center font-bold">
               <BarChart3 className="w-4 h-4" />
             </div>
-            <h3 className="text-lg font-extrabold text-white tracking-tight">
+            <h3 className="text-lg font-black text-white tracking-tight">
               {LABELS.nav.reports}
             </h3>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Analítica financiera, comparativas temporales y mapas de calor
+          <p className="text-xs text-slate-400 font-sans mt-0.5">
+            Analítica de gastos, distribución por categorías y proyección
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Selector de 4 Períodos */}
-          <div className="flex items-center p-1 rounded-2xl bg-slate-950 border border-slate-800 text-xs font-mono font-bold">
+          {/* Selector de 4 Períodos Temporales */}
+          <div className="flex items-center gap-1 bg-[#070A12] p-1.5 rounded-2xl border border-slate-800">
             <button
-              onClick={() => setTimeRange("day")}
-              className={`px-3 py-1.5 rounded-xl transition-all ${
+              onClick={() => {
+                hapticTap();
+                setTimeRange("day");
+              }}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
                 timeRange === "day"
-                  ? "bg-cyan-500 text-slate-950 shadow-md font-extrabold"
+                  ? "bg-[#00F5A0] text-slate-950 font-black shadow-md shadow-[#00F5A0]/20"
                   : "text-slate-400 hover:text-white"
               }`}
             >
               Diario
             </button>
             <button
-              onClick={() => setTimeRange("week")}
-              className={`px-3 py-1.5 rounded-xl transition-all ${
+              onClick={() => {
+                hapticTap();
+                setTimeRange("week");
+              }}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
                 timeRange === "week"
-                  ? "bg-cyan-500 text-slate-950 shadow-md font-extrabold"
+                  ? "bg-[#00F5A0] text-slate-950 font-black shadow-md shadow-[#00F5A0]/20"
                   : "text-slate-400 hover:text-white"
               }`}
             >
               Semanal
             </button>
             <button
-              onClick={() => setTimeRange("month")}
-              className={`px-3 py-1.5 rounded-xl transition-all ${
+              onClick={() => {
+                hapticTap();
+                setTimeRange("month");
+              }}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
                 timeRange === "month"
-                  ? "bg-cyan-500 text-slate-950 shadow-md font-extrabold"
+                  ? "bg-[#00F5A0] text-slate-950 font-black shadow-md shadow-[#00F5A0]/20"
                   : "text-slate-400 hover:text-white"
               }`}
             >
               Mensual
             </button>
             <button
-              onClick={() => setTimeRange("year")}
-              className={`px-3 py-1.5 rounded-xl transition-all ${
+              onClick={() => {
+                hapticTap();
+                setTimeRange("year");
+              }}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
                 timeRange === "year"
-                  ? "bg-cyan-500 text-slate-950 shadow-md font-extrabold"
+                  ? "bg-[#00F5A0] text-slate-950 font-black shadow-md shadow-[#00F5A0]/20"
                   : "text-slate-400 hover:text-white"
               }`}
             >
@@ -236,29 +319,39 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
             </button>
           </div>
 
+          {/* Botón de Exportar a CSV */}
           <button
-            onClick={handleExportCsv}
-            className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 transition-colors"
-            title="Exportar reporte a CSV"
+            onClick={handleExportCSV}
+            className="p-2 sm:px-3 sm:py-1.5 rounded-2xl bg-[#0E1526] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+            title="Exportar a CSV"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5 text-[#00F5A0]" />
+            <span className="hidden sm:inline">Exportar CSV</span>
           </button>
         </div>
       </div>
 
-      {/* Selector de día específico si estamos en vista Diario */}
+      {/* Selector de Día Específico (Sólo en vista "day") */}
       {timeRange === "day" && (
-        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800">
-          <span className="text-xs font-mono uppercase text-cyan-400 font-bold flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5" /> Día analizado:
-          </span>
+        <div className="p-4 rounded-2xl bg-[#070A12] border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-[#00F5A0]" />
+            <span className="text-xs font-bold text-white uppercase font-mono">
+              Seleccionar Jornada:
+            </span>
+          </div>
+
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setSelectedDay(todayStr)}
-              className={`px-2.5 py-1 text-xs rounded-xl font-mono ${
+              type="button"
+              onClick={() => {
+                hapticTap();
+                setSelectedDay(todayStr);
+              }}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-colors ${
                 selectedDay === todayStr
-                  ? "bg-cyan-500 text-slate-950 font-bold"
-                  : "text-slate-400 hover:text-white bg-slate-900 border border-slate-800"
+                  ? "bg-[#00F5A0] text-slate-950 font-black shadow-md"
+                  : "bg-slate-900 text-slate-300 hover:text-white border border-slate-800"
               }`}
             >
               Hoy
@@ -266,185 +359,148 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
             <input
               type="date"
               value={selectedDay}
-              onChange={(e) => setSelectedDay(e.target.value)}
-              className="px-3 py-1 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+              onChange={(e) => {
+                hapticTap();
+                setSelectedDay(e.target.value);
+              }}
+              className="px-3 py-1 bg-[#0B0E17] border border-slate-700 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-[#00F5A0]"
             />
           </div>
         </div>
       )}
 
-      {/* KPI Cards de Resumen */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80">
-          <span className="text-[10px] uppercase font-mono text-slate-400 block mb-1">
-            Ingresos ({timeRange})
+      {/* Tarjetas de Resumen KPI con Código de Color */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="obsidian-card p-4 rounded-2xl border-l-2 border-l-[#00F5A0]">
+          <span className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+            Ingresos
           </span>
-          <span className="text-lg sm:text-xl font-extrabold font-mono text-emerald-400 block">
+          <span className="text-lg sm:text-xl font-black font-mono text-[#00F5A0]">
             {formatCurrency(totalIncome)}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80">
-          <span className="text-[10px] uppercase font-mono text-slate-400 block mb-1">
+        <div className="obsidian-card p-4 rounded-2xl border-l-2 border-l-rose-500">
+          <span className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
             Gastos Totales
           </span>
-          <span className="text-lg sm:text-xl font-extrabold font-mono text-rose-400 block">
+          <span className="text-lg sm:text-xl font-black font-mono text-rose-400">
             {formatCurrency(totalExpense)}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80">
-          <span className="text-[10px] uppercase font-mono text-slate-400 block mb-1">
-            Balance / Ahorro
+        <div className="obsidian-card p-4 rounded-2xl border-l-2 border-l-purple-500">
+          <span className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+            Ahorro / Metas
           </span>
-          <span
-            className={`text-lg sm:text-xl font-extrabold font-mono block ${
-              netBalance >= 0 ? "text-cyan-400" : "text-rose-400"
-            }`}
-          >
-            {formatCurrency(netBalance)}
+          <span className="text-lg sm:text-xl font-black font-mono text-purple-400">
+            {formatCurrency(totalSavingsTransferred)}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25">
-          <span className="text-[10px] uppercase font-mono text-amber-400 block mb-1">
-            Gastos Hormiga 🐜
+        <div className="obsidian-card p-4 rounded-2xl border-l-2 border-l-amber-500">
+          <span className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+            Gastos Hormiga
           </span>
-          <span className="text-lg sm:text-xl font-extrabold font-mono text-amber-300 block">
-            {formatCurrency(totalAntExpense)}
+          <span className="text-lg sm:text-xl font-black font-mono text-amber-400">
+            {formatCurrency(antExpensesTotal)}
           </span>
         </div>
       </div>
 
-      {/* VISTA ESPECÍFICA SEGÚN PERÍODO */}
-
-      {/* 1. VISTA DIARIA */}
+      {/* Detalle de Movimientos en Vista Diaria */}
       {timeRange === "day" && (
-        <div className="space-y-4 pt-2">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase font-mono text-slate-300 flex items-center gap-1.5">
-              <Clock className="w-4 h-4 text-cyan-400" />
-              Movimientos del Día ({selectedDay})
-            </h4>
-            <span className="text-xs font-mono text-slate-400">
-              {filteredTransactions.length} registros
-            </span>
-          </div>
+        <div className="space-y-3 pt-2">
+          <h4 className="text-xs font-bold uppercase font-mono text-slate-300 flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-[#00F5A0]" />
+            Movimientos del Día ({selectedDay})
+          </h4>
 
-          {filteredTransactions.length > 0 ? (
-            <div className="space-y-2">
-              {filteredTransactions.map((t) => (
-                <div
-                  key={t.id}
-                  className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
-                        t.type === "income"
-                          ? "bg-emerald-500/20 text-emerald-400"
-                          : t.type === "saving_transfer"
-                          ? "bg-cyan-500/20 text-cyan-400"
-                          : "bg-rose-500/20 text-rose-400"
-                      }`}
-                    >
-                      {t.type === "income" ? (
-                        <ArrowUpRight className="w-4 h-4" />
-                      ) : t.type === "saving_transfer" ? (
-                        <Zap className="w-4 h-4" />
-                      ) : (
-                        <ArrowDownRight className="w-4 h-4" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-white">
-                          {t.description}
-                        </span>
-                        {t.isAntExpense && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-bold">
-                            🐜 Hormiga
-                          </span>
-                        )}
-                        {t.goalTitle && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">
-                            🎯 {t.goalTitle}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        {t.accountName || "Cuenta general"} • {t.category}
-                      </span>
-                    </div>
-                  </div>
-
+          <div className="divide-y divide-slate-800/80 bg-[#070A12]/60 rounded-2xl p-3 border border-slate-800">
+            {filteredTransactions.map((tx) => (
+              <div
+                key={tx.id}
+                className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-850/40 px-2 rounded-xl transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-200 font-bold">{tx.description}</span>
+                  {tx.isAntExpense && (
+                    <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                      🐜 Hormiga
+                    </span>
+                  )}
+                  {tx.goalTitle && (
+                    <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[10px] font-bold">
+                      🎯 {tx.goalTitle}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-400 font-mono text-[11px]">
+                    {tx.accountName}
+                  </span>
                   <span
-                    className={`text-sm font-mono font-extrabold ${
-                      t.type === "income"
-                        ? "text-emerald-400"
-                        : t.type === "saving_transfer"
-                        ? "text-cyan-400"
+                    className={`font-mono font-black ${
+                      tx.type === "income"
+                        ? "text-[#00F5A0]"
+                        : tx.type === "saving_transfer"
+                        ? "text-purple-400"
                         : "text-rose-400"
                     }`}
                   >
-                    {t.type === "income" ? "+" : "-"}
-                    {formatCurrency(t.amount)}
+                    {tx.type === "income" ? "+" : "-"}
+                    {formatCurrency(tx.amount)}
                   </span>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-8 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-center space-y-2">
-              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto opacity-70" />
-              <p className="text-xs text-slate-300 font-medium">
-                No hay movimientos registrados para este día.
-              </p>
-              <p className="text-[11px] text-slate-500">
-                ¡Día sin gastos! Excelente para tu racha de ahorro.
-              </p>
-            </div>
-          )}
+              </div>
+            ))}
+
+            {filteredTransactions.length === 0 && (
+              <div className="py-8 text-center text-xs text-slate-400 space-y-1">
+                <CheckCircle2 className="w-6 h-6 text-[#00F5A0] mx-auto mb-1" />
+                <p className="font-bold text-slate-300">¡Día sin gastos registrados!</p>
+                <p className="text-slate-500">Excelente para tu racha de ahorro y control financiero.</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* 2. VISTA SEMANAL (Gráfico de Barras de los 7 días) */}
+      {/* Gráfico Semanal (7 Días) */}
       {timeRange === "week" && (
-        <div className="space-y-4 pt-2">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase font-mono text-slate-300 flex items-center gap-1.5">
-              <BarChart3 className="w-4 h-4 text-cyan-400" />
-              Gastos de los últimos 7 días
-            </h4>
-            <span className="text-xs font-mono text-slate-400">
-              Total semanal: {formatCurrency(totalExpense)}
-            </span>
-          </div>
+        <div className="space-y-3 pt-2">
+          <h4 className="text-xs font-bold uppercase font-mono text-slate-300 flex items-center gap-1.5">
+            <BarChart3 className="w-4 h-4 text-cyan-400" />
+            Curva de Gastos Diarios (Últimos 7 Días)
+          </h4>
 
-          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
-            <div className="grid grid-cols-7 gap-2 items-end h-40 pt-4">
-              {weekDayData.map((d, i) => {
-                const heightPct = Math.max(8, (d.amount / maxWeekAmount) * 100);
+          <div className="p-4 rounded-2xl bg-[#070A12]/90 border border-slate-800">
+            <div className="h-44 flex items-end justify-between gap-2 pt-6 pb-2">
+              {weekData.map((d, idx) => {
+                const heightPct = Math.min(100, Math.max(8, (d.amount / maxWeekAmount) * 100));
                 return (
-                  <div key={i} className="flex flex-col items-center gap-2 h-full justify-end group">
-                    <span className="text-[10px] font-mono text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                      ${Math.round(d.amount)}
-                    </span>
-                    <div className="w-full bg-slate-900 rounded-xl overflow-hidden h-full flex items-end">
+                  <div key={idx} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
+                    <div className="relative w-full flex items-end justify-center h-full">
                       <div
-                        style={{ height: `${heightPct}%` }}
-                        className={`w-full rounded-xl transition-all duration-500 ${
+                        className={`w-full max-w-[36px] rounded-t-xl transition-all duration-300 ${
                           d.isToday
-                            ? "bg-gradient-to-t from-cyan-500 to-cyan-300 shadow-md shadow-cyan-500/30"
-                            : "bg-slate-700 hover:bg-slate-600"
+                            ? "bg-gradient-to-t from-cyan-600 to-cyan-400 shadow-lg shadow-cyan-500/30"
+                            : d.amount > 0
+                            ? "bg-gradient-to-t from-slate-800 to-slate-700 group-hover:from-cyan-500/40 group-hover:to-cyan-400/60"
+                            : "bg-slate-900/60"
                         }`}
+                        style={{ height: `${heightPct}%` }}
                       />
+                      <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 border border-slate-700 text-white text-[10px] font-mono px-2 py-0.5 rounded-md pointer-events-none whitespace-nowrap z-10 shadow-xl">
+                        {formatCurrency(d.amount)}
+                      </div>
                     </div>
                     <span
-                      className={`text-xs font-mono font-bold ${
-                        d.isToday ? "text-cyan-400" : "text-slate-400"
+                      className={`text-[11px] font-mono font-bold ${
+                        d.isToday ? "text-cyan-400 font-black" : "text-slate-400"
                       }`}
                     >
-                      {d.name}
+                      {d.dayName}
                     </span>
                   </div>
                 );
@@ -454,56 +510,88 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
         </div>
       )}
 
-      {/* 3. VISTA ANUAL (12 Meses: Ingresos vs Gastos) */}
-      {timeRange === "year" && (
-        <div className="space-y-4 pt-2">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase font-mono text-slate-300 flex items-center gap-1.5">
-              <BarChart3 className="w-4 h-4 text-cyan-400" />
-              Evolución Anual {now.getFullYear()}
-            </h4>
-            <span className="text-xs font-mono text-slate-400">
-              Ahorro anual acumulado: {formatCurrency(netBalance)}
+      {/* UX-02: Gráfico de Semanas en la Vista Mensual */}
+      {timeRange === "month" && (
+        <div className="space-y-3 pt-2">
+          <h4 className="text-xs font-bold uppercase font-mono text-slate-300 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <BarChart3 className="w-4 h-4 text-[#00F5A0]" />
+              Evolución Semanal del Mes ({monthNames[now.getMonth()]})
             </span>
-          </div>
+            <span className="text-[11px] text-slate-400 font-mono">
+              Promedio semanal: {formatCurrency(totalExpense / 4)}
+            </span>
+          </h4>
 
-          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
-            <div className="grid grid-cols-12 gap-1.5 items-end h-40 pt-4">
-              {yearMonthData.map((m, i) => {
-                const expHeight = Math.max(6, (m.expenses / maxYearAmount) * 100);
-                const incHeight = Math.max(6, (m.incomes / maxYearAmount) * 100);
+          <div className="p-4 rounded-2xl bg-[#070A12]/90 border border-slate-800">
+            <div className="h-44 flex items-end justify-between gap-4 pt-6 pb-2">
+              {monthWeeksData.map((w, idx) => {
+                const heightPct = Math.min(100, Math.max(8, (w.amount / maxMonthWeekAmount) * 100));
                 return (
-                  <div key={i} className="flex flex-col items-center gap-1.5 h-full justify-end group">
-                    <div className="w-full flex items-end justify-center gap-0.5 h-full">
-                      {/* Barra Ingresos */}
+                  <div key={idx} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
+                    <div className="relative w-full flex items-end justify-center h-full">
                       <div
-                        style={{ height: `${incHeight}%` }}
-                        className="w-1/2 bg-emerald-500/80 hover:bg-emerald-400 rounded-t-sm transition-all"
-                        title={`${m.month} Ingresos: ${formatCurrency(m.incomes)}`}
+                        className="w-full max-w-[48px] rounded-t-xl transition-all duration-300 bg-gradient-to-t from-slate-800 to-[#00F5A0] group-hover:brightness-125 shadow-sm"
+                        style={{ height: `${heightPct}%` }}
                       />
-                      {/* Barra Gastos */}
+                      <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 border border-slate-700 text-white text-[10px] font-mono px-2 py-0.5 rounded-md pointer-events-none whitespace-nowrap z-10 shadow-xl">
+                        {formatCurrency(w.amount)}
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-300 font-bold">
+                      {w.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gráfico Anual (12 Meses con Barras Dobles) */}
+      {timeRange === "year" && (
+        <div className="space-y-3 pt-2">
+          <h4 className="text-xs font-bold uppercase font-mono text-slate-300 flex items-center gap-1.5">
+            <BarChart3 className="w-4 h-4 text-emerald-400" />
+            Evolución Anual (Ingresos vs Gastos {now.getFullYear()})
+          </h4>
+
+          <div className="p-4 rounded-2xl bg-[#070A12]/90 border border-slate-800">
+            <div className="h-48 flex items-end justify-between gap-1 sm:gap-2 pt-6 pb-2 overflow-x-auto">
+              {yearData.map((d, idx) => {
+                const incHeight = Math.min(100, Math.max(6, (d.income / maxYearAmount) * 100));
+                const expHeight = Math.min(100, Math.max(6, (d.expense / maxYearAmount) * 100));
+
+                return (
+                  <div key={idx} className="flex-1 min-w-[22px] flex flex-col items-center gap-2 group h-full justify-end">
+                    <div className="relative w-full flex items-end justify-center gap-1 h-full">
                       <div
+                        className="w-1/2 max-w-[14px] bg-[#00F5A0] rounded-t-sm transition-all"
+                        style={{ height: `${incHeight}%` }}
+                        title={`Ingresos: ${formatCurrency(d.income)}`}
+                      />
+                      <div
+                        className="w-1/2 max-w-[14px] bg-rose-500 rounded-t-sm transition-all"
                         style={{ height: `${expHeight}%` }}
-                        className="w-1/2 bg-rose-500/80 hover:bg-rose-400 rounded-t-sm transition-all"
-                        title={`${m.month} Gastos: ${formatCurrency(m.expenses)}`}
+                        title={`Gastos: ${formatCurrency(d.expense)}`}
                       />
                     </div>
                     <span
                       className={`text-[10px] font-mono ${
-                        m.isCurrentMonth
-                          ? "text-cyan-400 font-bold"
-                          : "text-slate-500"
+                        d.isCurrentMonth ? "text-[#00F5A0] font-black" : "text-slate-400"
                       }`}
                     >
-                      {m.month}
+                      {d.month}
                     </span>
                   </div>
                 );
               })}
             </div>
-            <div className="flex items-center justify-center gap-6 pt-3 text-[11px] font-mono text-slate-400">
+
+            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-center gap-6 text-xs text-slate-400 font-mono">
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-emerald-500" /> Ingresos
+                <span className="w-2.5 h-2.5 rounded bg-[#00F5A0]" /> Ingresos
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded bg-rose-500" /> Gastos
@@ -529,7 +617,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
                   {formatCurrency(cat.total)} ({cat.percentage.toFixed(1)}%)
                 </span>
               </div>
-              <div className="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800/80">
+              <div className="w-full h-2.5 bg-[#070A12] rounded-full overflow-hidden border border-slate-800/80">
                 <div
                   className="h-full rounded-full transition-all duration-500 shadow-sm"
                   style={{

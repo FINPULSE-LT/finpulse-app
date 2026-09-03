@@ -334,35 +334,35 @@ export default function HomePage() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Banner de Métricas Rápidas (KPIs) con Estilo Obsidian FinTech */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5 border-l-2 border-l-[#00F5A0]">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
                 Balance Total
               </span>
-              <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-[#00F5A0]/15 text-[#00F5A0] flex items-center justify-center shadow-sm">
                 <Wallet className="w-4 h-4" />
               </div>
             </div>
-            <span className="text-xl sm:text-2xl font-extrabold font-mono text-white tracking-tight">
+            <span className="text-xl sm:text-2xl font-black font-mono text-white tracking-tight">
               {formatCurrency(totalBalance)}
             </span>
           </div>
 
-          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5 border-l-2 border-l-[#00F5A0]">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
                 Ingresos Mes
               </span>
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-[#00F5A0]/15 text-[#00F5A0] flex items-center justify-center shadow-sm">
                 <TrendingUp className="w-4 h-4" />
               </div>
             </div>
-            <span className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-400 tracking-tight">
+            <span className="text-xl sm:text-2xl font-black font-mono text-[#00F5A0] tracking-tight">
               +{formatCurrency(monthlyIncome)}
             </span>
           </div>
 
-          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5 border-l-2 border-l-rose-500">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
                 Gastos Mes
@@ -371,23 +371,23 @@ export default function HomePage() {
                 <TrendingDown className="w-4 h-4" />
               </div>
             </div>
-            <span className="text-xl sm:text-2xl font-extrabold font-mono text-rose-400 tracking-tight">
+            <span className="text-xl sm:text-2xl font-black font-mono text-rose-400 tracking-tight">
               -{formatCurrency(monthlyExpense)}
             </span>
           </div>
 
-          <div className="obsidian-card rounded-3xl p-4 sm:p-5">
+          <div className="obsidian-card rounded-3xl p-4 sm:p-5 border-l-2 border-l-purple-500">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-mono text-slate-400 uppercase font-bold tracking-wider">
                 Ahorro Neto
               </span>
-              <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 flex items-center justify-center shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center shadow-sm">
                 <PiggyBank className="w-4 h-4" />
               </div>
             </div>
             <span
-              className={`text-xl sm:text-2xl font-extrabold font-mono tracking-tight ${
-                netSavings >= 0 ? "text-cyan-400" : "text-rose-400"
+              className={`text-xl sm:text-2xl font-black font-mono tracking-tight ${
+                netSavings >= 0 ? "text-purple-400" : "text-rose-400"
               }`}
             >
               {formatCurrency(netSavings)}
@@ -483,6 +483,7 @@ export default function HomePage() {
         isOpen={isVoiceModalOpen}
         onClose={() => setIsVoiceModalOpen(false)}
         accounts={accounts}
+        goals={goals}
         onConfirm={handleSaveParsedTransaction}
       />
 

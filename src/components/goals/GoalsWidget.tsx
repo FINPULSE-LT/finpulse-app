@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { SavingsGoal } from "@/types";
 import { formatCurrency, formatPercentage } from "@/lib/formatters/currency";
 import { LABELS } from "@/constants/labels";
+import { useHaptics } from "@/hooks/useHaptics";
 import { Trophy, Users, User, Plus, Share2, Target, Check, Sparkles } from "lucide-react";
 import confetti from "canvas-confetti";
 
@@ -27,11 +28,14 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
   const [contributeAmount, setContributeAmount] = useState("");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  const { hapticTap, hapticCelebration, hapticSuccess } = useHaptics();
+
   const handleCreateGoal = (e: React.FormEvent) => {
     e.preventDefault();
     const target = parseFloat(targetAmount);
     if (!title.trim() || isNaN(target) || target <= 0) return;
 
+    hapticSuccess();
     onAddGoal({
       title: title.trim(),
       targetAmount: target,
@@ -54,10 +58,11 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
     const amount = parseFloat(contributeAmount);
     if (isNaN(amount) || amount <= 0) return;
 
+    hapticCelebration();
     onContributeToGoal(goalId, amount);
     confetti({
-      particleCount: 50,
-      spread: 70,
+      particleCount: 60,
+      spread: 75,
       origin: { y: 0.7 },
     });
 
@@ -66,13 +71,14 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
   };
 
   const handleCopyCode = (code: string) => {
+    hapticTap();
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2500);
   };
 
   return (
-    <div className="glass-card rounded-2xl p-5 border border-slate-800 space-y-4">
+    <div className="obsidian-card rounded-3xl p-5 sm:p-6 border border-purple-500/25 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-white tracking-tight">
