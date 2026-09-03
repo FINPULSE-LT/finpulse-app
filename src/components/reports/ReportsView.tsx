@@ -216,25 +216,33 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
       "Es Gasto Hormiga",
       "Meta de Ahorro",
     ];
+
+    const sanitizeCsvCell = (val: string | number | undefined) => {
+      if (val === undefined || val === null) return '""';
+      let s = String(val);
+      if (/^[=+\-@\t\r]/.test(s)) {
+        s = `'` + s;
+      }
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
     const rows = filteredTransactions.map((t) => [
-      t.id,
-      t.transactedAt,
-      t.type,
-      `"${t.description.replace(/"/g, '""')}"`,
-      t.category,
+      sanitizeCsvCell(t.id),
+      sanitizeCsvCell(t.transactedAt),
+      sanitizeCsvCell(t.type),
+      sanitizeCsvCell(t.description),
+      sanitizeCsvCell(t.category),
       t.amount,
-      t.accountName || "",
-      t.isAntExpense ? "SI" : "NO",
-      t.goalTitle || "",
+      sanitizeCsvCell(t.accountName || ""),
+      t.isAntExpense ? '"SI"' : '"NO"',
+      sanitizeCsvCell(t.goalTitle || ""),
     ]);
 
-    const csvContent =
-      "data:text/csv;charset=utf-8,\uFEFF" +
-      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute(
       "download",
       `finpulse_reporte_${timeRange}_${new Date().toISOString().split("T")[0]}.csv`
@@ -242,6 +250,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (

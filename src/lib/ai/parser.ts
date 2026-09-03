@@ -25,7 +25,8 @@ const SAVING_KEYWORDS = [
 const INSTALLMENT_REGEX = /(?:en\s+)?(\d{1,2})\s*(?:cuotas?|pagos?)/i;
 
 export function parseTransactionTextLocally(rawText: string): ParsedTransactionResult {
-  const clean = rawText.trim().toLowerCase();
+  const bounded = (rawText || "").slice(0, 500);
+  const clean = bounded.trim().toLowerCase();
 
   // 1. Detección de Cuotas
   let installmentsTotal = 1;
