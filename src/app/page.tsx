@@ -74,6 +74,16 @@ export default function Home() {
         setIsDemoMode(true);
       }
 
+      const sessionSaved = localStorage.getItem("finpulse_user_session");
+      if (sessionSaved) {
+        try {
+          const parsed = JSON.parse(sessionSaved);
+          if (parsed.email) {
+            setUserEmail(parsed.email);
+          }
+        } catch {}
+      }
+
       const savedTx = localStorage.getItem("finpulse_transactions");
       if (savedTx) {
         try {
@@ -112,8 +122,6 @@ export default function Home() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user?.email) {
         setUserEmail(session.user.email);
-      } else {
-        setUserEmail(undefined);
       }
       setIsAuthChecking(false);
     });
