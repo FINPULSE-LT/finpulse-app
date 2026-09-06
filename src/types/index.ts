@@ -96,3 +96,8 @@ export interface ParsedTransactionResult {
   confidence: number;
   rawText: string;
 }
+
+export interface CategoryBudget {
+  categoryId: string;
+  limit: number;
+}

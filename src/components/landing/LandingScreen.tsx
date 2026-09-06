@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { loginWithEmailAndPassword, AUTHORIZED_USERS } from "@/lib/auth/credentials";
@@ -21,6 +21,7 @@ import {
   EyeOff,
   AlertCircle,
   UserCheck,
+  KeyRound,
 } from "lucide-react";
 
 interface LandingScreenProps {
@@ -37,6 +38,8 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [statusInfo, setStatusInfo] = useState("");
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,22 +62,14 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
     }
   };
 
-  const handleQuickFill = async (uEmail: string, uPass: string) => {
+  const handleSelectUser = (uEmail: string, userName: string) => {
     setEmail(uEmail);
-    setPassword(uPass);
-    setIsLoading(true);
+    setPassword("");
     setErrorMessage("");
-
-    try {
-      const result = await loginWithEmailAndPassword(uEmail, uPass);
-      if (result.success && result.user) {
-        onLoginSuccess(result.user.email);
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || "Error en inicio rápido.");
-    } finally {
-      setIsLoading(false);
-    }
+    setStatusInfo(`Cuenta seleccionada: ${userName}. Por favor ingresa tu contraseña para acceder.`);
+    setTimeout(() => {
+      passwordInputRef.current?.focus();
+    }, 100);
   };
 
   const handleGoogleLogin = async () => {
@@ -217,30 +212,37 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
                 </p>
               </div>
 
-              {/* Botones de Acceso Rápido para los 2 Usuarios Creados */}
+              {/* Botones de Selección Rápida para los 2 Usuarios Creados */}
               <div className="p-3 rounded-2xl bg-[#081813] border border-emerald-900/60 space-y-2">
                 <span className="text-[10px] uppercase font-mono text-emerald-400 font-bold block text-center">
-                  ⚡ Accesos Rápidos Oficiales
+                  ⚡ Seleccionar Usuario Oficial
                 </span>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => handleQuickFill("lisandrotorressola@gmail.com", "Lisinho2026")}
-                    className="p-2 rounded-xl bg-[#0A221B] hover:bg-[#0E2E25] border border-emerald-500/30 text-[11px] font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    onClick={() => handleSelectUser("lisandrotorressola@gmail.com", "Lisandro")}
+                    className="p-2 rounded-xl bg-[#0A221B] hover:bg-[#0E2E25] border border-emerald-500/30 text-[11px] font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                   >
                     <UserCheck className="w-3.5 h-3.5 text-[#00F5A0]" />
                     <span>Lisandro</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleQuickFill("alberdimariajose02@gmail.com", "Velinha2026")}
-                    className="p-2 rounded-xl bg-[#0A221B] hover:bg-[#0E2E25] border border-emerald-500/30 text-[11px] font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    onClick={() => handleSelectUser("alberdimariajose02@gmail.com", "María José")}
+                    className="p-2 rounded-xl bg-[#0A221B] hover:bg-[#0E2E25] border border-emerald-500/30 text-[11px] font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                   >
                     <UserCheck className="w-3.5 h-3.5 text-purple-400" />
                     <span>María José</span>
                   </button>
                 </div>
               </div>
+
+              {statusInfo && (
+                <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 shrink-0 text-[#00F5A0]" />
+                  <span>{statusInfo}</span>
+                </div>
+              )}
 
               {errorMessage && (
                 <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs flex items-start gap-2.5 leading-relaxed">
@@ -262,7 +264,10 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
                       required
                       placeholder="tu-correo@gmail.com"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setStatusInfo("");
+                      }}
                       className="w-full pl-9 pr-3.5 py-2.5 bg-[#060E0C] border border-slate-700/80 rounded-xl text-xs text-white focus:outline-none focus:border-[#00F5A0] transition-colors"
                     />
                   </div>
@@ -270,11 +275,12 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
 
                 <div>
                   <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
-                    Contraseña
+                    Contraseña (Requerida)
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
+                      ref={passwordInputRef}
                       type={showPassword ? "text" : "password"}
                       required
                       placeholder="••••••••"

@@ -1,19 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { Transaction } from "@/types";
+import { Transaction, CategoryBudget } from "@/types";
 import { CATEGORIES } from "@/constants/categories";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Sliders, AlertTriangle, CheckCircle, Plus, Edit2 } from "lucide-react";
 
-interface CategoryBudget {
-  categoryId: string;
-  limit: number;
-}
-
 interface BudgetsWidgetProps {
   transactions: Transaction[];
+  budgets?: CategoryBudget[];
+  onSaveBudgets?: (updated: CategoryBudget[]) => void;
   onOpenQuickExpense?: () => void;
 }
 
@@ -27,20 +24,18 @@ const DEFAULT_BUDGETS: CategoryBudget[] = [
 
 export const BudgetsWidget: React.FC<BudgetsWidgetProps> = ({
   transactions,
+  budgets: initialBudgets,
+  onSaveBudgets,
 }) => {
-  const [budgets, setBudgets] = useState<CategoryBudget[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("finpulse_budgets");
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          return DEFAULT_BUDGETS;
-        }
-      }
+  const [budgets, setBudgets] = useState<CategoryBudget[]>(
+    initialBudgets && initialBudgets.length > 0 ? initialBudgets : DEFAULT_BUDGETS
+  );
+
+  React.useEffect(() => {
+    if (initialBudgets && initialBudgets.length > 0) {
+      setBudgets(initialBudgets);
     }
-    return DEFAULT_BUDGETS;
-  });
+  }, [initialBudgets]);
 
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [newLimit, setNewLimit] = useState("");
@@ -73,9 +68,7 @@ export const BudgetsWidget: React.FC<BudgetsWidgetProps> = ({
       : [...budgets, { categoryId: catId, limit: val }];
 
     setBudgets(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("finpulse_budgets", JSON.stringify(updated));
-    }
+    onSaveBudgets?.(updated);
     setEditingCategory(null);
     setNewLimit("");
   };

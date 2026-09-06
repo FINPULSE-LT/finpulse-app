@@ -1,10 +1,11 @@
 /**
- * Gestión de Credenciales y Autenticación Simplificada
- * Permite el acceso directo por Email + Contraseña con fallback garantizado para usuarios autorizados.
+ * Gestión de Credenciales y Autenticación de FinPulse
+ * Valida credenciales contra Supabase Auth y garantiza el inicio de sesión para los usuarios autorizados.
  */
 import { createClient } from "@/lib/supabase/client";
 
 export interface AuthorizedUser {
+  id: string;
   email: string;
   password: string;
   name: string;
@@ -13,12 +14,14 @@ export interface AuthorizedUser {
 
 export const AUTHORIZED_USERS: AuthorizedUser[] = [
   {
+    id: "f3129e05-84c8-4551-a5c1-26a2f153650b",
     email: "lisandrotorressola@gmail.com",
     password: "Lisinho2026",
     name: "Lisandro Torres Sola",
     displayName: "Lisandro",
   },
   {
+    id: "8de13f0f-325a-489a-9792-0a6b16a04c2a",
     email: "alberdimariajose02@gmail.com",
     password: "Velinha2026",
     name: "María José Alberdi",
@@ -29,32 +32,16 @@ export const AUTHORIZED_USERS: AuthorizedUser[] = [
 export async function loginWithEmailAndPassword(
   emailInput: string,
   passwordInput: string
-): Promise<{ success: boolean; user?: { email: string; name: string }; error?: string }> {
+): Promise<{ success: boolean; user?: { id: string; email: string; name: string }; error?: string }> {
   const email = emailInput.trim().toLowerCase();
   const password = passwordInput.trim();
 
-  // 1. Verificación contra los usuarios autorizados prioritarios
+  // 1. Verificación contra la lista autorizada
   const authorized = AUTHORIZED_USERS.find(
     (u) => u.email.toLowerCase() === email && u.password === password
   );
 
-  if (authorized) {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("finpulse_user_session", JSON.stringify({
-        email: authorized.email,
-        name: authorized.name,
-      }));
-    }
-    return {
-      success: true,
-      user: {
-        email: authorized.email,
-        name: authorized.name,
-      },
-    };
-  }
-
-  // 2. Intento vía Supabase Auth
+  // 2. Intento de inicio de sesión vía Supabase Auth
   try {
     const supabase = createClient();
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -64,26 +51,52 @@ export async function loginWithEmailAndPassword(
 
     if (!error && data.user) {
       if (typeof window !== "undefined") {
-        localStorage.setItem("finpulse_user_session", JSON.stringify({
-          email: data.user.email,
-          name: data.user.user_metadata?.full_name || email.split("@")[0],
-        }));
+        localStorage.setItem(
+          "finpulse_user_session",
+          JSON.stringify({
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.user_metadata?.full_name || email.split("@")[0],
+          })
+        );
       }
       return {
         success: true,
         user: {
+          id: data.user.id,
           email: data.user.email || email,
           name: data.user.user_metadata?.full_name || email.split("@")[0],
         },
       };
     }
 
+    // Si Supabase falló pero la contraseña ingresada coincide con el usuario autorizado
+    if (authorized) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "finpulse_user_session",
+          JSON.stringify({
+            id: authorized.id,
+            email: authorized.email,
+            name: authorized.name,
+          })
+        );
+      }
+      return {
+        success: true,
+        user: {
+          id: authorized.id,
+          email: authorized.email,
+          name: authorized.name,
+        },
+      };
+    }
+
     if (error) {
-      // Si el email no fue confirmado aún en Supabase
-      if (error.message.toLowerCase().includes("not confirmed")) {
+      if (error.message.toLowerCase().includes("not confirmed") || error.code === "email_not_confirmed") {
         return {
           success: false,
-          error: "Credenciales válidas, pero el correo no ha sido confirmado aún en Supabase.",
+          error: "Tu usuario está registrado, pero debes confirmar el enlace que Supabase envió a tu correo.",
         };
       }
       return {
@@ -92,6 +105,16 @@ export async function loginWithEmailAndPassword(
       };
     }
   } catch (err: any) {
+    if (authorized) {
+      return {
+        success: true,
+        user: {
+          id: authorized.id,
+          email: authorized.email,
+          name: authorized.name,
+        },
+      };
+    }
     return {
       success: false,
       error: err.message || "Error al autenticar",
@@ -100,6 +123,6 @@ export async function loginWithEmailAndPassword(
 
   return {
     success: false,
-    error: "Credenciales no reconocidas.",
+    error: "Credenciales no reconocidas o contraseña incorrecta.",
   };
 }

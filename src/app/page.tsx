@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Navbar } from "@/components/navigation/Navbar";
 import { MobileTabBar } from "@/components/navigation/MobileTabBar";
 import { CoachWidget } from "@/components/coach/CoachWidget";
@@ -23,42 +23,51 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { evaluateStreakUpdate } from "@/lib/streaks/engine";
 import { createClient } from "@/lib/supabase/client";
 import {
+  fetchUserFinances,
+  createSupabaseTransaction,
+  deleteSupabaseTransaction,
+  createSupabaseAccount,
+  createSupabaseGoal,
+  contributeToSupabaseGoal,
+  updateSupabaseBudgets,
+  updateSupabaseProfileStreak,
+} from "@/lib/supabase/data";
+import {
   INITIAL_ACCOUNTS,
   INITIAL_TRANSACTIONS,
   INITIAL_GOALS,
 } from "@/constants/initialData";
 import { CoachPersonalityType } from "@/constants/coach";
-import { Account, Transaction, SavingsGoal, ParsedTransactionResult } from "@/types";
-import { LABELS } from "@/constants/labels";
 import {
-  Wallet,
-  TrendingUp,
-  CreditCard,
-  Target,
-  Sparkles,
-  ArrowUpRight,
-  ArrowDownRight,
-  ShieldCheck,
-  Award,
-} from "lucide-react";
+  Account,
+  Transaction,
+  SavingsGoal,
+  CategoryBudget,
+  ParsedTransactionResult,
+} from "@/types";
 
 export default function Home() {
   // Estado de Autenticación & Gate de Pantalla de Inicio
+  const [userId, setUserId] = useState<string | undefined>(undefined);
   const [userEmail, setUserEmail] = useState<string | undefined>(undefined);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 
-  // Estados Principales del Negocio
-  const [accounts, setAccounts] = useState<Account[]>(INITIAL_ACCOUNTS);
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
-  const [goals, setGoals] = useState<SavingsGoal[]>(INITIAL_GOALS);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "transactions" | "accounts" | "goals" | "reports">("dashboard");
+  // Estados Principales del Negocio (Inician vacíos en 0 para usuarios reales)
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [goals, setGoals] = useState<SavingsGoal[]>([]);
+  const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
+  const [activeTab, setActiveTab] = useState<
+    "dashboard" | "transactions" | "accounts" | "goals" | "reports"
+  >("dashboard");
 
-  // Estados de Gamificación
-  const [streakCount, setStreakCount] = useState<number>(3);
-  const [rescuedMoney, setRescuedMoney] = useState<number>(18500);
+  // Estados de Gamificación (Inician en 0 para usuarios nuevos)
+  const [streakCount, setStreakCount] = useState<number>(0);
+  const [rescuedMoney, setRescuedMoney] = useState<number>(0);
   const [freezeAvailable, setFreezeAvailable] = useState<boolean>(true);
-  const [coachMode, setCoachMode] = useState<CoachPersonalityType>("strict");
+  const [coachMode, setCoachMode] = useState<CoachPersonalityType>("encouraging");
 
   // Modales
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
@@ -66,12 +75,49 @@ export default function Home() {
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
+  /**
+   * Carga los datos financieros directamente desde Supabase Cloud
+   */
+  const loadCloudFinances = useCallback(async (uid: string) => {
+    try {
+      setIsLoadingData(true);
+      const supabase = createClient();
+      const cloudData = await fetchUserFinances(supabase, uid);
+
+      setAccounts(cloudData.accounts);
+      setTransactions(cloudData.transactions);
+      setGoals(cloudData.goals);
+      setBudgets(cloudData.budgets);
+
+      if (cloudData.profile) {
+        setStreakCount(cloudData.profile.streakAntExpensesCount || 0);
+        setRescuedMoney(cloudData.profile.totalRescuedMoney || 0);
+        setFreezeAvailable(cloudData.profile.monthlyStreakFreezeAvailable ?? true);
+        if (cloudData.profile.coachMode) {
+          setCoachMode(cloudData.profile.coachMode);
+        }
+      }
+    } catch (err) {
+      console.error("Error al cargar datos desde Supabase:", err);
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, []);
+
   // Carga inicial y Detección de Usuario en Supabase
   useEffect(() => {
+    const supabase = createClient();
+
+    // 1. Verificar sesión persistida localmente (sólo tokens/id, nunca datos financieros)
     if (typeof window !== "undefined") {
       const demoSaved = localStorage.getItem("finpulse_demo_mode");
       if (demoSaved === "true") {
         setIsDemoMode(true);
+        setAccounts(INITIAL_ACCOUNTS);
+        setTransactions(INITIAL_TRANSACTIONS);
+        setGoals(INITIAL_GOALS);
+        setStreakCount(3);
+        setRescuedMoney(18500);
       }
 
       const sessionSaved = localStorage.getItem("finpulse_user_session");
@@ -81,79 +127,54 @@ export default function Home() {
           if (parsed.email) {
             setUserEmail(parsed.email);
           }
+          if (parsed.id) {
+            setUserId(parsed.id);
+            loadCloudFinances(parsed.id);
+          }
         } catch {}
-      }
-
-      const savedTx = localStorage.getItem("finpulse_transactions");
-      if (savedTx) {
-        try {
-          setTransactions(JSON.parse(savedTx));
-        } catch {}
-      }
-
-      const savedAcc = localStorage.getItem("finpulse_accounts");
-      if (savedAcc) {
-        try {
-          setAccounts(JSON.parse(savedAcc));
-        } catch {}
-      }
-
-      const savedGoals = localStorage.getItem("finpulse_goals");
-      if (savedGoals) {
-        try {
-          setGoals(JSON.parse(savedGoals));
-        } catch {}
-      }
-
-      const savedCoach = localStorage.getItem("finpulse_coach_mode") as CoachPersonalityType;
-      if (savedCoach) {
-        setCoachMode(savedCoach);
       }
     }
 
-    const supabase = createClient();
+    // 2. Verificar sesión activa oficial en Supabase Auth
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user?.email) {
+      if (data.user) {
+        setUserId(data.user.id);
         setUserEmail(data.user.email);
+        setIsDemoMode(false);
+        loadCloudFinances(data.user.id);
       }
       setIsAuthChecking(false);
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.email) {
-        setUserEmail(session.user.email);
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          setUserId(session.user.id);
+          setUserEmail(session.user.email);
+          setIsDemoMode(false);
+          loadCloudFinances(session.user.id);
+        } else if (_event === "SIGNED_OUT") {
+          setUserId(undefined);
+          setUserEmail(undefined);
+          setAccounts([]);
+          setTransactions([]);
+          setGoals([]);
+        }
+        setIsAuthChecking(false);
       }
-      setIsAuthChecking(false);
-    });
+    );
 
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
-
-  // Persistencia local
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("finpulse_transactions", JSON.stringify(transactions));
-    }
-  }, [transactions]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("finpulse_accounts", JSON.stringify(accounts));
-    }
-  }, [accounts]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("finpulse_goals", JSON.stringify(goals));
-    }
-  }, [goals]);
+  }, [loadCloudFinances]);
 
   // Atajos de teclado
   useKeyboardShortcuts({
     onQuickInputFocus: () => {
-      const input = document.querySelector('input[placeholder*="Almuerzo"]') as HTMLInputElement;
+      const input = document.querySelector(
+        'input[placeholder*="Almuerzo"]'
+      ) as HTMLInputElement;
       input?.focus();
     },
     onNewTransaction: () => setIsManualModalOpen(true),
@@ -170,39 +191,58 @@ export default function Home() {
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
+    setUserId(undefined);
     setUserEmail(undefined);
     setIsDemoMode(false);
+    setAccounts([]);
+    setTransactions([]);
+    setGoals([]);
+    setStreakCount(0);
+    setRescuedMoney(0);
     if (typeof window !== "undefined") {
       localStorage.removeItem("finpulse_demo_mode");
+      localStorage.removeItem("finpulse_user_session");
     }
   };
 
-  // Acceso a Modo Demo
+  // Acceso a Modo Demo (Sólo para pruebas sin registro)
   const handleEnterDemo = () => {
     setIsDemoMode(true);
+    setAccounts(INITIAL_ACCOUNTS);
+    setTransactions(INITIAL_TRANSACTIONS);
+    setGoals(INITIAL_GOALS);
+    setStreakCount(3);
+    setRescuedMoney(18500);
     if (typeof window !== "undefined") {
       localStorage.setItem("finpulse_demo_mode", "true");
     }
   };
 
   // Aportar a Meta
-  const handleContributeToGoal = (goalId: string, amount: number) => {
+  const handleContributeToGoal = async (goalId: string, amount: number) => {
+    if (userId) {
+      const supabase = createClient();
+      await contributeToSupabaseGoal(supabase, userId, goalId, amount);
+    }
+
     setGoals((prev) =>
       prev.map((g) => {
         if (g.id === goalId) {
           const newCurrent = g.currentAmount + amount;
           const updatedMembers = g.members?.map((m) => {
-            if (m.userId === (userEmail || "demo-user")) {
+            if (m.userId === (userId || userEmail || "demo-user")) {
               const updatedContrib = m.contributedAmount + amount;
               return {
                 ...m,
                 contributedAmount: updatedContrib,
-                percentageContribution: newCurrent > 0 ? (updatedContrib / newCurrent) * 100 : 0,
+                percentageContribution:
+                  newCurrent > 0 ? (updatedContrib / newCurrent) * 100 : 0,
               };
             }
             return {
               ...m,
-              percentageContribution: newCurrent > 0 ? (m.contributedAmount / newCurrent) * 100 : 0,
+              percentageContribution:
+                newCurrent > 0 ? (m.contributedAmount / newCurrent) * 100 : 0,
             };
           });
 
@@ -217,15 +257,17 @@ export default function Home() {
     );
   };
 
-  // Guardar Transacción Parseda por IA
-  const handleSaveParsedTransaction = (
+  // Guardar Transacción Parseda por IA (En Supabase Cloud)
+  const handleSaveParsedTransaction = async (
     parsed: ParsedTransactionResult,
     selectedAccountId?: string,
     targetGoalId?: string,
     customDate?: string
   ) => {
     const acc = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
-    const targetGoal = goals.find((g) => g.id === (targetGoalId || parsed.goalId));
+    const targetGoal = goals.find(
+      (g) => g.id === (targetGoalId || parsed.goalId)
+    );
 
     const finalDate = customDate
       ? new Date(customDate).toISOString()
@@ -233,9 +275,7 @@ export default function Home() {
       ? new Date(parsed.dateSuggestion).toISOString()
       : new Date().toISOString();
 
-    const newTx: Transaction = {
-      id: `tx-${Date.now()}`,
-      userId: userEmail || "demo-user",
+    const txPayload: Omit<Transaction, "id" | "userId"> = {
       accountId: acc ? acc.id : undefined,
       accountName: acc ? acc.name : "General",
       goalId: targetGoal ? targetGoal.id : undefined,
@@ -250,19 +290,44 @@ export default function Home() {
       transactedAt: finalDate,
     };
 
-    setTransactions((prev) => [newTx, ...prev]);
-
-    // Si fue ahorro, sumar a la meta
-    if (targetGoal) {
-      handleContributeToGoal(targetGoal.id, parsed.amount);
+    // 1. Persistir en Supabase Cloud si hay usuario autenticado
+    if (userId) {
+      const supabase = createClient();
+      const res = await createSupabaseTransaction(
+        supabase,
+        userId,
+        txPayload,
+        acc,
+        targetGoal
+      );
+      if (res.success && res.transaction) {
+        setTransactions((prev) => [res.transaction!, ...prev]);
+      } else {
+        // Fallback optimista si hubo error
+        const optimisticTx: Transaction = {
+          ...txPayload,
+          id: `tx-${Date.now()}`,
+          userId,
+        };
+        setTransactions((prev) => [optimisticTx, ...prev]);
+      }
+    } else {
+      // Modo demo en memoria
+      const demoTx: Transaction = {
+        ...txPayload,
+        id: `tx-${Date.now()}`,
+        userId: "demo-user",
+      };
+      setTransactions((prev) => [demoTx, ...prev]);
     }
 
-    // Actualizar Saldo de Cuenta
+    // 2. Actualizar saldo local optimista
     if (acc) {
       setAccounts((prev) =>
         prev.map((a) => {
           if (a.id === acc.id) {
-            const diff = parsed.type === "income" ? parsed.amount : -parsed.amount;
+            const diff =
+              parsed.type === "income" ? parsed.amount : -parsed.amount;
             return { ...a, balance: a.balance + diff };
           }
           return a;
@@ -270,7 +335,11 @@ export default function Home() {
       );
     }
 
-    // Evaluar Racha de Hábitos
+    if (targetGoal) {
+      handleContributeToGoal(targetGoal.id, parsed.amount);
+    }
+
+    // 3. Evaluar Racha de Hábitos y guardar en Supabase
     const streakResult = evaluateStreakUpdate(
       streakCount,
       undefined,
@@ -279,21 +348,54 @@ export default function Home() {
     );
     setStreakCount(streakResult.newStreak);
     if (streakResult.freezeUsed) setFreezeAvailable(false);
+    const newRescued =
+      streakResult.rescuedMoneyAdded > 0
+        ? rescuedMoney + streakResult.rescuedMoneyAdded
+        : rescuedMoney;
     if (streakResult.rescuedMoneyAdded > 0) {
-      setRescuedMoney((prev) => prev + streakResult.rescuedMoneyAdded);
+      setRescuedMoney(newRescued);
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      updateSupabaseProfileStreak(supabase, userId, streakResult.newStreak, newRescued);
     }
   };
 
-  // Guardar Transacción Manual
-  const handleSaveManualTransaction = (txData: Omit<Transaction, "id" | "userId">) => {
-    const newTx: Transaction = {
-      ...txData,
-      id: `tx-${Date.now()}`,
-      userId: userEmail || "demo-user",
-    };
-
-    setTransactions((prev) => [newTx, ...prev]);
+  // Guardar Transacción Manual (En Supabase Cloud)
+  const handleSaveManualTransaction = async (
+    txData: Omit<Transaction, "id" | "userId">
+  ) => {
     const acc = accounts.find((a) => a.id === txData.accountId);
+    const targetGoal = goals.find((g) => g.id === txData.goalId);
+
+    if (userId) {
+      const supabase = createClient();
+      const res = await createSupabaseTransaction(
+        supabase,
+        userId,
+        txData,
+        acc,
+        targetGoal
+      );
+      if (res.success && res.transaction) {
+        setTransactions((prev) => [res.transaction!, ...prev]);
+      } else {
+        const optimisticTx: Transaction = {
+          ...txData,
+          id: `tx-${Date.now()}`,
+          userId,
+        };
+        setTransactions((prev) => [optimisticTx, ...prev]);
+      }
+    } else {
+      const demoTx: Transaction = {
+        ...txData,
+        id: `tx-${Date.now()}`,
+        userId: "demo-user",
+      };
+      setTransactions((prev) => [demoTx, ...prev]);
+    }
 
     if (txData.type === "saving_transfer" && txData.goalId) {
       handleContributeToGoal(txData.goalId, txData.amount);
@@ -319,35 +421,91 @@ export default function Home() {
     );
     setStreakCount(streakResult.newStreak);
     if (streakResult.freezeUsed) setFreezeAvailable(false);
+    const newRescued =
+      streakResult.rescuedMoneyAdded > 0
+        ? rescuedMoney + streakResult.rescuedMoneyAdded
+        : rescuedMoney;
     if (streakResult.rescuedMoneyAdded > 0) {
-      setRescuedMoney((prev) => prev + streakResult.rescuedMoneyAdded);
+      setRescuedMoney(newRescued);
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      updateSupabaseProfileStreak(supabase, userId, streakResult.newStreak, newRescued);
     }
   };
 
-  const handleDeleteTransaction = (id: string) => {
+  // Eliminar Transacción (En Supabase Cloud)
+  const handleDeleteTransaction = async (id: string) => {
+    const tx = transactions.find((t) => t.id === id);
     setTransactions((prev) => prev.filter((t) => t.id !== id));
+
+    if (tx && tx.accountId) {
+      const revertDiff = tx.type === "income" ? -tx.amount : tx.amount;
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === tx.accountId ? { ...a, balance: a.balance + revertDiff } : a
+        )
+      );
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      await deleteSupabaseTransaction(
+        supabase,
+        userId,
+        id,
+        tx?.accountId,
+        tx?.amount,
+        tx?.type
+      );
+    }
   };
 
-  const handleAddAccount = (accountData: Omit<Account, "id" | "userId">) => {
+  // Crear Cuenta (En Supabase Cloud)
+  const handleAddAccount = async (
+    accountData: Omit<Account, "id" | "userId">
+  ) => {
+    if (userId) {
+      const supabase = createClient();
+      const created = await createSupabaseAccount(supabase, userId, accountData);
+      if (created) {
+        setAccounts((prev) => [...prev, created]);
+        return;
+      }
+    }
+
     const newAcc: Account = {
       ...accountData,
       id: `acc-${Date.now()}`,
-      userId: userEmail || "demo-user",
+      userId: userId || "demo-user",
     };
     setAccounts((prev) => [...prev, newAcc]);
   };
 
-  const handleAddGoal = (goalData: Omit<SavingsGoal, "id" | "creatorId">) => {
+  // Crear Meta de Ahorro (En Supabase Cloud)
+  const handleAddGoal = async (
+    goalData: Omit<SavingsGoal, "id" | "creatorId">
+  ) => {
+    if (userId) {
+      const supabase = createClient();
+      const created = await createSupabaseGoal(supabase, userId, goalData);
+      if (created) {
+        setGoals((prev) => [...prev, created]);
+        return;
+      }
+    }
+
     const newGoal: SavingsGoal = {
       ...goalData,
       id: `goal-${Date.now()}`,
-      creatorId: userEmail || "demo-user",
+      creatorId: userId || "demo-user",
       members: goalData.isCollaborative
         ? [
             {
               id: `gm-${Date.now()}`,
               goalId: `goal-${Date.now()}`,
-              userId: userEmail || "demo-user",
+              userId: userId || "demo-user",
               userName: "Tú (Creador)",
               contributedAmount: 0,
               percentageContribution: 0,
@@ -359,7 +517,16 @@ export default function Home() {
     setGoals((prev) => [...prev, newGoal]);
   };
 
-  // Cálculos de Balance
+  // Guardar Presupuestos (En Supabase Cloud)
+  const handleSaveBudgets = async (updatedBudgets: CategoryBudget[]) => {
+    setBudgets(updatedBudgets);
+    if (userId) {
+      const supabase = createClient();
+      await updateSupabaseBudgets(supabase, updatedBudgets);
+    }
+  };
+
+  // Cálculos de Balance y KPIs (Parten de $0 para usuarios recién creados)
   const totalBalance = accounts.reduce((acc, curr) => acc + curr.balance, 0);
   const monthlyIncome = transactions
     .filter((t) => t.type === "income")
@@ -372,13 +539,19 @@ export default function Home() {
     monthlyIncome > 0 ? Math.max(0, (netSavings / monthlyIncome) * 100) : 0;
 
   // GATE DE AUTENTICACIÓN / PANTALLA DE INICIO OFICIAL
-  // Si no está chequeando auth y el usuario no está logueado ni en demo, mostrar LandingScreen
   if (!isAuthChecking && !userEmail && !isDemoMode) {
     return (
       <LandingScreen
         onEnterDemo={handleEnterDemo}
         onLoginSuccess={(email) => {
           setUserEmail(email);
+          const supabase = createClient();
+          supabase.auth.getUser().then(({ data }) => {
+            if (data.user) {
+              setUserId(data.user.id);
+              loadCloudFinances(data.user.id);
+            }
+          });
         }}
       />
     );
@@ -398,7 +571,15 @@ export default function Home() {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Banner de Balance & KPIs Hero Verde Esmeralda (Inspirado en Monefy & Wallet) */}
+        {/* Indicador de Sincronización en la Nube */}
+        {isLoadingData && (
+          <div className="flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-emerald-950/40 border border-emerald-500/20 text-emerald-300 text-xs">
+            <span className="w-2 h-2 rounded-full bg-[#00F5A0] animate-ping" />
+            <span>Sincronizando tus finanzas desde Supabase Cloud...</span>
+          </div>
+        )}
+
+        {/* Banner de Balance & KPIs Hero Verde Esmeralda */}
         <div className="emerald-hero-banner rounded-3xl p-5 sm:p-7 border border-[#00F5A0]/30 shadow-2xl">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
             {/* Balance Total Destacado */}
@@ -413,7 +594,11 @@ export default function Home() {
                 {formatCurrency(totalBalance)}
               </div>
               <p className="text-xs text-emerald-200/70 font-sans">
-                Consolidado en tiempo real de {accounts.length} cuentas y tarjetas
+                {accounts.length > 0
+                  ? `Consolidado de ${accounts.length} ${
+                      accounts.length === 1 ? "cuenta" : "cuentas"
+                    } en Supabase Cloud`
+                  : "Comienza registrando tus cuentas y movimientos"}
               </p>
             </div>
 
@@ -476,7 +661,11 @@ export default function Home() {
                 <ExpenseDonutWidget transactions={transactions} />
 
                 {/* Presupuestos por Categoría Inspirados en Mobills */}
-                <BudgetsWidget transactions={transactions} />
+                <BudgetsWidget
+                  transactions={transactions}
+                  budgets={budgets}
+                  onSaveBudgets={handleSaveBudgets}
+                />
 
                 {/* Últimos Movimientos con Filtros */}
                 <TransactionList
@@ -491,8 +680,12 @@ export default function Home() {
                   currentMode={coachMode}
                   onModeChange={(newMode) => {
                     setCoachMode(newMode);
-                    if (typeof window !== "undefined") {
-                      localStorage.setItem("finpulse_coach_mode", newMode);
+                    if (userId) {
+                      const supabase = createClient();
+                      supabase
+                        .from("profiles")
+                        .update({ coach_mode: newMode })
+                        .eq("id", userId);
                     }
                   }}
                   streakCount={streakCount}
@@ -546,7 +739,11 @@ export default function Home() {
 
         {activeTab === "reports" && (
           <div className="space-y-6">
-            <BudgetsWidget transactions={transactions} />
+            <BudgetsWidget
+              transactions={transactions}
+              budgets={budgets}
+              onSaveBudgets={handleSaveBudgets}
+            />
             <ReportsView transactions={transactions} />
           </div>
         )}
@@ -559,7 +756,7 @@ export default function Home() {
         onOpenQuickAction={() => setIsManualModalOpen(true)}
       />
 
-      {/* Modales Desacoplados */}
+      {/* Modales Flotantes */}
       <VoiceExpenseModal
         isOpen={isVoiceModalOpen}
         onClose={() => setIsVoiceModalOpen(false)}
@@ -587,6 +784,14 @@ export default function Home() {
         onDemoAccess={handleEnterDemo}
         onSuccess={() => {
           setIsAuthModalOpen(false);
+          const supabase = createClient();
+          supabase.auth.getUser().then(({ data }) => {
+            if (data.user) {
+              setUserId(data.user.id);
+              setUserEmail(data.user.email);
+              loadCloudFinances(data.user.id);
+            }
+          });
         }}
       />
     </div>
