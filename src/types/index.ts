@@ -101,3 +101,31 @@ export interface CategoryBudget {
   categoryId: string;
   limit: number;
 }
+
+// ==============================================================================
+// MÓDULO DE INVERSIONES (Preparación de Arquitectura de Cartera y Patrimonio)
+// ==============================================================================
+export type InvestmentType =
+  | "cedear"
+  | "stock"
+  | "crypto"
+  | "fixed_term"
+  | "bond"
+  | "mutual_fund"
+  | "other";
+
+export interface InvestmentAsset {
+  id: string;
+  userId: string;
+  name: string; // ej: "Apple Inc (AAPL)", "Plazo Fijo UVA", "Bitcoin (BTC)"
+  ticker?: string;
+  type: InvestmentType;
+  quantity: number;
+  averageBuyPrice: number;
+  currentPrice: number;
+  currency: string; // "ARS", "USD"
+  platform?: string; // ej: "IOL", "Balanz", "Binance", "Galicia"
+  notes?: string;
+  updatedAt?: string;
+  createdAt?: string;
+}
