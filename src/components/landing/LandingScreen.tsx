@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   loginWithEmailAndPassword,
   resendConfirmationEmail,
+  verifyUserTokenOrUrl,
   AUTHORIZED_USERS,
 } from "@/lib/auth/credentials";
 import {
@@ -26,6 +27,7 @@ import {
   AlertCircle,
   UserCheck,
   KeyRound,
+  ExternalLink,
 } from "lucide-react";
 
 interface LandingScreenProps {
@@ -46,7 +48,29 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   const [isUnconfirmed, setIsUnconfirmed] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [isVerifyingToken, setIsVerifyingToken] = useState(false);
+  const [showTokenField, setShowTokenField] = useState(false);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  const handleVerifyToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tokenInput.trim() || !email.trim()) return;
+    try {
+      setIsVerifyingToken(true);
+      setErrorMessage("");
+      const result = await verifyUserTokenOrUrl(tokenInput, email);
+      if (result.success && result.user) {
+        onLoginSuccess(result.user);
+      } else {
+        setErrorMessage(result.error || "No se pudo validar el enlace/código.");
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "Error al verificar.");
+    } finally {
+      setIsVerifyingToken(false);
+    }
+  };
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,7 +290,7 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
                   </div>
 
                   {isUnconfirmed && (
-                    <div className="pt-2 border-t border-rose-500/20 flex flex-col gap-2">
+                    <div className="pt-2 border-t border-rose-500/20 flex flex-col gap-2.5">
                       <button
                         type="button"
                         disabled={isResending}
@@ -290,6 +314,41 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
                           ✓ Enlace reenviado. Revisa tu bandeja de entrada o spam.
                         </p>
                       )}
+
+                      {/* Validador de Enlace / Código que redirige a localhost */}
+                      <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowTokenField(!showTokenField)}
+                          className="text-[11px] text-cyan-400 hover:text-cyan-300 underline text-left flex items-center gap-1 cursor-pointer"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          ¿El enlace te redirige a localhost o tienes un código? Haz clic aquí para pegarlo
+                        </button>
+
+                        {(showTokenField || true) && (
+                          <div className="space-y-2 bg-[#060E0C] p-2.5 rounded-xl border border-cyan-500/30">
+                            <label className="block text-[10px] font-mono text-cyan-300 uppercase">
+                              Pega el enlace completo (o código de 6 dígitos) de tu correo:
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Pega aquí la URL que abrió (http://localhost:3000/...) o tu código"
+                              value={tokenInput}
+                              onChange={(e) => setTokenInput(e.target.value)}
+                              className="w-full px-3 py-2 bg-[#0A1A14] border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleVerifyToken}
+                              disabled={isVerifyingToken || !tokenInput.trim()}
+                              className="w-full py-2 px-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1 transition-all disabled:opacity-50 cursor-pointer"
+                            >
+                              {isVerifyingToken ? "Validando en Supabase..." : "⚡ Validar y Entrar a FinPulse"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

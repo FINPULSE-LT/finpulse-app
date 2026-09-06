@@ -150,3 +150,120 @@ export async function resendConfirmationEmail(email: string): Promise<{ success:
     return { success: false, error: err.message || "Error al reenviar correo" };
   }
 }
+
+/**
+ * Valida un token, código OTP o URL de confirmación pegada por el usuario
+ */
+export async function verifyUserTokenOrUrl(
+  input: string,
+  email: string
+): Promise<LoginResult> {
+  const supabase = createClient();
+  const trimmed = input.trim();
+
+  try {
+    // 1. Si es un código numérico de 6 dígitos
+    if (/^\d{6}$/.test(trimmed)) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: trimmed,
+        type: "signup",
+      });
+
+      if (!error && data.user) {
+        const userPayload = {
+          id: data.user.id,
+          email: data.user.email || email,
+          name: data.user.user_metadata?.full_name || email.split("@")[0],
+        };
+        if (typeof window !== "undefined") {
+          localStorage.setItem("finpulse_user_session", JSON.stringify(userPayload));
+          localStorage.removeItem("finpulse_demo_mode");
+        }
+        return { success: true, user: userPayload };
+      }
+      return { success: false, error: error?.message || "Código incorrecto o expirado." };
+    }
+
+    // 2. Si pegó una URL (ej: http://localhost:3000/auth/callback?code=... o token_hash=... o verify?token=...)
+    if (trimmed.includes("http") || trimmed.includes("?") || trimmed.includes("#")) {
+      // Si tiene token_hash
+      const tokenHashMatch = trimmed.match(/token_hash=([^&]+)/);
+      if (tokenHashMatch) {
+        const token_hash = decodeURIComponent(tokenHashMatch[1]);
+        const typeMatch = trimmed.match(/type=([^&]+)/);
+        const type = (typeMatch ? decodeURIComponent(typeMatch[1]) : "signup") as any;
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash,
+          type,
+        });
+        if (!error && data.user) {
+          const userPayload = {
+            id: data.user.id,
+            email: data.user.email || email,
+            name: data.user.user_metadata?.full_name || email.split("@")[0],
+          };
+          if (typeof window !== "undefined") {
+            localStorage.setItem("finpulse_user_session", JSON.stringify(userPayload));
+            localStorage.removeItem("finpulse_demo_mode");
+          }
+          return { success: true, user: userPayload };
+        }
+        return { success: false, error: error?.message || "Enlace expirado o no válido." };
+      }
+
+      // Si tiene code= (PKCE)
+      const codeMatch = trimmed.match(/code=([^&]+)/);
+      if (codeMatch) {
+        const code = decodeURIComponent(codeMatch[1]);
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!error && data.user) {
+          const userPayload = {
+            id: data.user.id,
+            email: data.user.email || email,
+            name: data.user.user_metadata?.full_name || email.split("@")[0],
+          };
+          if (typeof window !== "undefined") {
+            localStorage.setItem("finpulse_user_session", JSON.stringify(userPayload));
+            localStorage.removeItem("finpulse_demo_mode");
+          }
+          return { success: true, user: userPayload };
+        }
+        return { success: false, error: error?.message || "Código de acceso ya utilizado o expirado." };
+      }
+
+      // Si es la URL directa de Supabase con verify?token=...
+      const tokenMatch = trimmed.match(/[?&]token=([^&]+)/);
+      if (tokenMatch) {
+        const token = decodeURIComponent(tokenMatch[1]);
+        const typeMatch = trimmed.match(/type=([^&]+)/);
+        const type = (typeMatch ? decodeURIComponent(typeMatch[1]) : "signup") as any;
+        const { data, error } = await supabase.auth.verifyOtp({
+          email: email.trim().toLowerCase(),
+          token,
+          type,
+        });
+        if (!error && data.user) {
+          const userPayload = {
+            id: data.user.id,
+            email: data.user.email || email,
+            name: data.user.user_metadata?.full_name || email.split("@")[0],
+          };
+          if (typeof window !== "undefined") {
+            localStorage.setItem("finpulse_user_session", JSON.stringify(userPayload));
+            localStorage.removeItem("finpulse_demo_mode");
+          }
+          return { success: true, user: userPayload };
+        }
+        return { success: false, error: error?.message || "Token no válido o ya confirmado." };
+      }
+    }
+
+    return {
+      success: false,
+      error: "No se reconoció el formato. Ingresa el código de 6 dígitos o la URL completa de confirmación.",
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Error al verificar." };
+  }
+}
