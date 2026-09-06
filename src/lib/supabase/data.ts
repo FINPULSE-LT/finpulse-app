@@ -503,3 +503,113 @@ export async function updateSupabaseProfileStreak(
     .eq("id", userId);
   return !error;
 }
+
+/**
+ * Unirse a una meta colaborativa existente en Supabase mediante código o ID
+ */
+export async function joinSupabaseGoal(
+  supabase: SupabaseClient,
+  userId: string,
+  inviteCodeOrGoalId: string
+): Promise<{ success: boolean; goal?: SavingsGoal; error?: string }> {
+  try {
+    const raw = inviteCodeOrGoalId.trim();
+    // Extraer UUID si es un link o query param
+    let cleanCode = raw;
+    if (raw.includes("unirseMeta=")) {
+      const match = raw.match(/unirseMeta=([^&]+)/);
+      if (match) cleanCode = match[1];
+    }
+
+    let goalId: string | null = null;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanCode);
+
+    if (isUuid) {
+      goalId = cleanCode;
+    } else {
+      // Buscar por invite_code
+      const { data: found } = await supabase
+        .from("savings_goals")
+        .select("id")
+        .eq("invite_code", cleanCode)
+        .maybeSingle();
+
+      if (found) {
+        goalId = found.id;
+      }
+    }
+
+    if (!goalId) {
+      return {
+        success: false,
+        error: "No se encontró ninguna meta colaborativa con ese código de invitación.",
+      };
+    }
+
+    // 2. Insertar en goal_members si no existe
+    const { data: existingMember } = await supabase
+      .from("goal_members")
+      .select("id")
+      .eq("goal_id", goalId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!existingMember) {
+      const { error: insertErr } = await supabase.from("goal_members").insert({
+        goal_id: goalId,
+        user_id: userId,
+        contributed_amount: 0,
+      });
+
+      if (insertErr) {
+        return { success: false, error: "Error al unirte al equipo de la meta." };
+      }
+    }
+
+    // 3. Obtener la meta con miembros actualizados
+    const { data: fullGoal, error: gError } = await supabase
+      .from("savings_goals")
+      .select(`
+        *,
+        goal_members (*)
+      `)
+      .eq("id", goalId)
+      .single();
+
+    if (gError || !fullGoal) {
+      return { success: false, error: "Te has unido, pero hubo un problema al cargar los datos." };
+    }
+
+    const members: GoalMember[] = (fullGoal.goal_members || []).map((m: any) => ({
+      id: m.id,
+      goalId: m.goal_id,
+      userId: m.user_id,
+      userName: m.user_id === userId ? "Tú" : "Participante",
+      contributedAmount: Number(m.contributed_amount) || 0,
+      percentageContribution:
+        Number(fullGoal.current_amount) > 0
+          ? (Number(m.contributed_amount) / Number(fullGoal.current_amount)) * 100
+          : 0,
+      joinedAt: m.joined_at,
+    }));
+
+    const parsedGoal: SavingsGoal = {
+      id: fullGoal.id,
+      creatorId: fullGoal.creator_id,
+      title: fullGoal.title,
+      targetAmount: Number(fullGoal.target_amount),
+      currentAmount: Number(fullGoal.current_amount),
+      targetDate: fullGoal.target_date || undefined,
+      isCollaborative: fullGoal.is_collaborative,
+      inviteCode: fullGoal.invite_code || undefined,
+      categoryIcon: fullGoal.category_icon,
+      colorHex: fullGoal.color_hex,
+      members,
+      createdAt: fullGoal.created_at,
+    };
+
+    return { success: true, goal: parsedGoal };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Error al unirse a la meta" };
+  }
+}

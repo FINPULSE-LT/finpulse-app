@@ -29,6 +29,7 @@ import {
   createSupabaseAccount,
   createSupabaseGoal,
   contributeToSupabaseGoal,
+  joinSupabaseGoal,
   updateSupabaseBudgets,
   updateSupabaseProfileStreak,
 } from "@/lib/supabase/data";
@@ -168,6 +169,48 @@ export default function Home() {
       authListener.subscription.unsubscribe();
     };
   }, [loadCloudFinances]);
+
+  // Unirse a una Meta de Ahorro Compartida (mediante código o URL)
+  const handleJoinGoal = useCallback(
+    async (inviteCodeOrGoalId: string) => {
+      if (!userId) {
+        return {
+          success: false,
+          error: "Debes iniciar sesión para unirte a una meta colaborativa.",
+        };
+      }
+      const supabase = createClient();
+      const res = await joinSupabaseGoal(supabase, userId, inviteCodeOrGoalId);
+      if (res.success && res.goal) {
+        setGoals((prev) => {
+          const exists = prev.some((g) => g.id === res.goal!.id);
+          if (exists) {
+            return prev.map((g) => (g.id === res.goal!.id ? res.goal! : g));
+          }
+          return [res.goal!, ...prev];
+        });
+        return { success: true, goalTitle: res.goal.title };
+      }
+      return { success: false, error: res.error || "No se pudo unir a la meta" };
+    },
+    [userId]
+  );
+
+  // Detección y auto-unión si se ingresó mediante link de invitación (?unirseMeta=...)
+  useEffect(() => {
+    if (typeof window !== "undefined" && userId) {
+      const params = new URLSearchParams(window.location.search);
+      const goalToJoin = params.get("unirseMeta");
+      if (goalToJoin) {
+        handleJoinGoal(goalToJoin).then((res) => {
+          if (res.success) {
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, "", newUrl);
+          }
+        });
+      }
+    }
+  }, [userId, handleJoinGoal]);
 
   // Atajos de teclado
   useKeyboardShortcuts({
@@ -706,6 +749,8 @@ export default function Home() {
                   goals={goals}
                   onAddGoal={handleAddGoal}
                   onContributeToGoal={handleContributeToGoal}
+                  onJoinGoal={handleJoinGoal}
+                  creatorName={userEmail?.split("@")[0] || "Lisandro"}
                 />
               </div>
             </div>
@@ -734,6 +779,8 @@ export default function Home() {
             goals={goals}
             onAddGoal={handleAddGoal}
             onContributeToGoal={handleContributeToGoal}
+            onJoinGoal={handleJoinGoal}
+            creatorName={userEmail?.split("@")[0] || "Lisandro"}
           />
         )}
 

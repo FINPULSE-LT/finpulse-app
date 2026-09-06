@@ -138,6 +138,7 @@ CREATE POLICY "Miembros pueden ver metas compartidas en las que participan"
   ON public.savings_goals FOR SELECT
   USING (
     auth.uid() = creator_id OR
+    is_collaborative = true OR
     EXISTS (SELECT 1 FROM public.goal_members gm WHERE gm.goal_id = savings_goals.id AND gm.user_id = auth.uid())
   );
 

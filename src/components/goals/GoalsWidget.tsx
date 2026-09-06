@@ -7,19 +7,27 @@ import { LABELS } from "@/constants/labels";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Trophy, Users, User, Plus, Share2, Target, Check, Sparkles } from "lucide-react";
 import confetti from "canvas-confetti";
+import { ShareGoalModal } from "./ShareGoalModal";
+import { JoinGoalModal } from "./JoinGoalModal";
 
 interface GoalsWidgetProps {
   goals: SavingsGoal[];
   onAddGoal: (goal: Omit<SavingsGoal, "id" | "creatorId">) => void;
   onContributeToGoal: (goalId: string, amount: number) => void;
+  onJoinGoal?: (code: string) => Promise<{ success: boolean; error?: string; goalTitle?: string }>;
+  creatorName?: string;
 }
 
 export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
   goals,
   onAddGoal,
   onContributeToGoal,
+  onJoinGoal,
+  creatorName = "Tú",
 }) => {
   const [isAdding, setIsAdding] = useState(false);
+  const [sharingGoal, setSharingGoal] = useState<SavingsGoal | null>(null);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [targetAmount, setTargetAmount] = useState("");
   const [targetDate, setTargetDate] = useState("");
@@ -90,16 +98,32 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
           </span>
         </div>
 
-        <button
-          onClick={() => {
-            hapticTap();
-            setIsAdding(!isAdding);
-          }}
-          className="p-1.5 px-3 rounded-xl bg-[#0E1526] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
-        >
-          <Plus className="w-3.5 h-3.5 text-purple-400" />
-          <span>Nueva meta</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onJoinGoal && (
+            <button
+              onClick={() => {
+                hapticTap();
+                setIsJoinModalOpen(true);
+              }}
+              className="p-1.5 px-3 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 hover:text-white border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+              title="Unirse a una meta compartida con código o enlace"
+            >
+              <Users className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Unirse a Meta</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              hapticTap();
+              setIsAdding(!isAdding);
+            }}
+            className="p-1.5 px-3 rounded-xl bg-[#0E1526] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5 text-purple-400" />
+            <span>Nueva meta</span>
+          </button>
+        </div>
       </div>
 
       {/* Formulario de Nueva Meta */}
@@ -278,16 +302,19 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
                 )}
               </div>
 
-              {/* Acciones de la Meta (Aportar o Código) */}
+              {/* Acciones de la Meta (Compartir y Aportar) */}
               <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                {goal.isCollaborative && goal.inviteCode && (
+                {goal.isCollaborative && (
                   <button
-                    onClick={() => handleCopyCode(goal.inviteCode!)}
-                    className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
-                    title="Copiar código de invitación"
+                    onClick={() => {
+                      hapticTap();
+                      setSharingGoal(goal);
+                    }}
+                    className="text-xs px-2.5 py-1 rounded-xl bg-purple-950/50 hover:bg-purple-900/70 border border-purple-500/40 text-purple-300 font-bold flex items-center gap-1.5 transition-all"
+                    title="Compartir meta por WhatsApp, Enlace o Email"
                   >
-                    <Share2 className="w-3 h-3 text-purple-400" />
-                    <span>{copiedCode === goal.inviteCode ? "¡Copiado!" : goal.inviteCode}</span>
+                    <Share2 className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Compartir</span>
                   </button>
                 )}
 
@@ -332,6 +359,23 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
           );
         })}
       </div>
+
+      {/* Modal para Compartir Meta (WhatsApp, Link, Email, Código) */}
+      <ShareGoalModal
+        isOpen={!!sharingGoal}
+        onClose={() => setSharingGoal(null)}
+        goal={sharingGoal}
+        creatorName={creatorName}
+      />
+
+      {/* Modal para Unirse a Meta */}
+      {onJoinGoal && (
+        <JoinGoalModal
+          isOpen={isJoinModalOpen}
+          onClose={() => setIsJoinModalOpen(false)}
+          onJoinGoal={onJoinGoal}
+        />
+      )}
     </div>
   );
 };
