@@ -3,7 +3,11 @@
 import React, { useState, useRef } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { loginWithEmailAndPassword, AUTHORIZED_USERS } from "@/lib/auth/credentials";
+import {
+  loginWithEmailAndPassword,
+  resendConfirmationEmail,
+  AUTHORIZED_USERS,
+} from "@/lib/auth/credentials";
 import {
   Sparkles,
   ShieldCheck,
@@ -26,7 +30,7 @@ import {
 
 interface LandingScreenProps {
   onEnterDemo: () => void;
-  onLoginSuccess: (email: string) => void;
+  onLoginSuccess: (user: { id: string; email: string; name?: string }) => void;
 }
 
 export const LandingScreen: React.FC<LandingScreenProps> = ({
@@ -39,6 +43,9 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [statusInfo, setStatusInfo] = useState("");
+  const [isUnconfirmed, setIsUnconfirmed] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
@@ -48,12 +55,17 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
     try {
       setIsLoading(true);
       setErrorMessage("");
+      setIsUnconfirmed(false);
+      setResendSuccess(false);
       const result = await loginWithEmailAndPassword(email, password);
 
       if (result.success && result.user) {
-        onLoginSuccess(result.user.email);
+        onLoginSuccess(result.user);
       } else {
         setErrorMessage(result.error || "Credenciales incorrectas.");
+        if (result.isUnconfirmed) {
+          setIsUnconfirmed(true);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err.message || "Error al iniciar sesión.");
@@ -66,6 +78,8 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
     setEmail(uEmail);
     setPassword("");
     setErrorMessage("");
+    setIsUnconfirmed(false);
+    setResendSuccess(false);
     setStatusInfo(`Cuenta seleccionada: ${userName}. Por favor ingresa tu contraseña para acceder.`);
     setTimeout(() => {
       passwordInputRef.current?.focus();
@@ -245,9 +259,39 @@ export const LandingScreen: React.FC<LandingScreenProps> = ({
               )}
 
               {errorMessage && (
-                <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs flex items-start gap-2.5 leading-relaxed">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-                  <span>{errorMessage}</span>
+                <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs flex flex-col gap-2.5 leading-relaxed">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                    <span>{errorMessage}</span>
+                  </div>
+
+                  {isUnconfirmed && (
+                    <div className="pt-2 border-t border-rose-500/20 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        disabled={isResending}
+                        onClick={async () => {
+                          setIsResending(true);
+                          const res = await resendConfirmationEmail(email);
+                          setIsResending(false);
+                          if (res.success) {
+                            setResendSuccess(true);
+                          } else {
+                            setErrorMessage(res.error || "No se pudo reenviar el correo.");
+                          }
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-rose-500/30"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-rose-300" />
+                        {isResending ? "Reenviando a tu Gmail..." : "Reenviar enlace de confirmación a mi Gmail"}
+                      </button>
+                      {resendSuccess && (
+                        <p className="text-[11px] text-[#00F5A0] font-mono text-center">
+                          ✓ Enlace reenviado. Revisa tu bandeja de entrada o spam.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

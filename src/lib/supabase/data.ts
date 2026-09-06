@@ -22,7 +22,7 @@ export async function fetchUserFinances(
   supabase: SupabaseClient,
   userId: string
 ): Promise<UserFinancesData> {
-  // 1. Obtener Perfil
+  // 1. Obtener Perfil (o crearlo si es primera vez para integridad referencial)
   let profile: Profile | null = null;
   const { data: profileData } = await supabase
     .from("profiles")
@@ -44,6 +44,20 @@ export async function fetchUserFinances(
       totalRescuedMoney: Number(profileData.total_rescued_money) || 0,
       createdAt: profileData.created_at,
     };
+  } else {
+    // Si no existe, crearlo automáticamente en Supabase para asegurar que foreign keys no fallen
+    try {
+      await supabase.from("profiles").upsert(
+        {
+          id: userId,
+          display_name: "Usuario",
+          currency: "ARS",
+        },
+        { onConflict: "id", ignoreDuplicates: true }
+      );
+    } catch (e) {
+      console.warn("No se pudo auto-inicializar perfil en Supabase:", e);
+    }
   }
 
   // 2. Obtener Cuentas
@@ -328,38 +342,65 @@ export async function createSupabaseAccount(
   supabase: SupabaseClient,
   userId: string,
   account: Omit<Account, "id" | "userId">
-): Promise<Account | null> {
-  const { data, error } = await supabase
-    .from("accounts")
-    .insert({
-      user_id: userId,
-      name: account.name,
-      account_type: account.accountType,
-      balance: account.balance,
-      closing_day: account.closingDay || null,
-      due_day: account.dueDay || null,
-      color_hex: account.colorHex || "#10b981",
-      card_network: account.cardNetwork || null,
-      last_four_digits: account.lastFourDigits || null,
-    })
-    .select()
-    .single();
+): Promise<{ success: boolean; account?: Account; error?: string }> {
+  try {
+    // Asegurar integridad referencial con el perfil
+    await supabase.from("profiles").upsert(
+      {
+        id: userId,
+        display_name: "Usuario",
+        currency: "ARS",
+      },
+      { onConflict: "id", ignoreDuplicates: true }
+    );
 
-  if (error || !data) return null;
+    const { data, error } = await supabase
+      .from("accounts")
+      .insert({
+        user_id: userId,
+        name: account.name,
+        account_type: account.accountType,
+        balance: account.balance,
+        closing_day: account.closingDay || null,
+        due_day: account.dueDay || null,
+        color_hex: account.colorHex || "#10b981",
+        card_network: account.cardNetwork || null,
+        last_four_digits: account.lastFourDigits || null,
+      })
+      .select()
+      .single();
 
-  return {
-    id: data.id,
-    userId: data.user_id,
-    name: data.name,
-    accountType: data.account_type,
-    balance: Number(data.balance),
-    closingDay: data.closing_day || undefined,
-    dueDay: data.due_day || undefined,
-    colorHex: data.color_hex || "#10b981",
-    cardNetwork: data.card_network || undefined,
-    lastFourDigits: data.last_four_digits || undefined,
-    createdAt: data.created_at,
-  };
+    if (error || !data) {
+      console.error("Error al crear cuenta en Supabase:", error);
+      return {
+        success: false,
+        error: error?.message || "No se pudo insertar la cuenta en Supabase.",
+      };
+    }
+
+    return {
+      success: true,
+      account: {
+        id: data.id,
+        userId: data.user_id,
+        name: data.name,
+        accountType: data.account_type,
+        balance: Number(data.balance),
+        closingDay: data.closing_day || undefined,
+        dueDay: data.due_day || undefined,
+        colorHex: data.color_hex || "#10b981",
+        cardNetwork: data.card_network || undefined,
+        lastFourDigits: data.last_four_digits || undefined,
+        createdAt: data.created_at,
+      },
+    };
+  } catch (err: any) {
+    console.error("Excepción en createSupabaseAccount:", err);
+    return {
+      success: false,
+      error: err.message || "Excepción al guardar la cuenta.",
+    };
+  }
 }
 
 /**
@@ -369,56 +410,83 @@ export async function createSupabaseGoal(
   supabase: SupabaseClient,
   userId: string,
   goal: Omit<SavingsGoal, "id" | "creatorId">
-): Promise<SavingsGoal | null> {
-  const { data, error } = await supabase
-    .from("savings_goals")
-    .insert({
-      creator_id: userId,
-      title: goal.title,
-      target_amount: goal.targetAmount,
-      current_amount: goal.currentAmount || 0,
-      target_date: goal.targetDate || null,
-      is_collaborative: goal.isCollaborative,
-      invite_code: goal.inviteCode || null,
-      category_icon: goal.categoryIcon || "Trophy",
-      color_hex: goal.colorHex || "#06b6d4",
-    })
-    .select()
-    .single();
-
-  if (error || !data) return null;
-
-  // Si tiene aporte inicial o es colaborativa, registrar al creador en goal_members
-  await supabase.from("goal_members").insert({
-    goal_id: data.id,
-    user_id: userId,
-    contributed_amount: goal.currentAmount || 0,
-  });
-
-  return {
-    id: data.id,
-    creatorId: data.creator_id,
-    title: data.title,
-    targetAmount: Number(data.target_amount),
-    currentAmount: Number(data.current_amount),
-    targetDate: data.target_date || undefined,
-    isCollaborative: data.is_collaborative,
-    inviteCode: data.invite_code || undefined,
-    categoryIcon: data.category_icon,
-    colorHex: data.color_hex,
-    members: [
+): Promise<{ success: boolean; goal?: SavingsGoal; error?: string }> {
+  try {
+    // Asegurar integridad referencial con el perfil
+    await supabase.from("profiles").upsert(
       {
-        id: `gm-${Date.now()}`,
-        goalId: data.id,
-        userId: userId,
-        userName: "Tú",
-        contributedAmount: Number(data.current_amount) || 0,
-        percentageContribution: 100,
-        joinedAt: new Date().toISOString(),
+        id: userId,
+        display_name: "Usuario",
+        currency: "ARS",
       },
-    ],
-    createdAt: data.created_at,
-  };
+      { onConflict: "id", ignoreDuplicates: true }
+    );
+
+    const { data, error } = await supabase
+      .from("savings_goals")
+      .insert({
+        creator_id: userId,
+        title: goal.title,
+        target_amount: goal.targetAmount,
+        current_amount: goal.currentAmount || 0,
+        target_date: goal.targetDate || null,
+        is_collaborative: goal.isCollaborative ?? false,
+        invite_code: goal.inviteCode || null,
+        category_icon: goal.categoryIcon || "Trophy",
+        color_hex: goal.colorHex || "#06b6d4",
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error("Error al crear meta en Supabase:", error);
+      return {
+        success: false,
+        error: error?.message || "No se pudo insertar la meta en Supabase Cloud.",
+      };
+    }
+
+    // Si tiene aporte inicial o es colaborativa, registrar al creador en goal_members
+    await supabase.from("goal_members").insert({
+      goal_id: data.id,
+      user_id: userId,
+      contributed_amount: goal.currentAmount || 0,
+    });
+
+    return {
+      success: true,
+      goal: {
+        id: data.id,
+        creatorId: data.creator_id,
+        title: data.title,
+        targetAmount: Number(data.target_amount),
+        currentAmount: Number(data.current_amount),
+        targetDate: data.target_date || undefined,
+        isCollaborative: data.is_collaborative,
+        inviteCode: data.invite_code || undefined,
+        categoryIcon: data.category_icon,
+        colorHex: data.color_hex,
+        members: [
+          {
+            id: `gm-${Date.now()}`,
+            goalId: data.id,
+            userId: userId,
+            userName: "Tú",
+            contributedAmount: Number(data.current_amount) || 0,
+            percentageContribution: 100,
+            joinedAt: new Date().toISOString(),
+          },
+        ],
+        createdAt: data.created_at,
+      },
+    };
+  } catch (err: any) {
+    console.error("Excepción en createSupabaseGoal:", err);
+    return {
+      success: false,
+      error: err.message || "Excepción al guardar la meta en Supabase.",
+    };
+  }
 }
 
 /**

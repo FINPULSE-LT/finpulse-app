@@ -143,6 +143,12 @@ export default function Home() {
         setUserEmail(data.user.email);
         setIsDemoMode(false);
         loadCloudFinances(data.user.id);
+      } else {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("finpulse_user_session");
+        }
+        setUserId(undefined);
+        setUserEmail(undefined);
       }
       setIsAuthChecking(false);
     });
@@ -334,7 +340,15 @@ export default function Home() {
     };
 
     // 1. Persistir en Supabase Cloud si hay usuario autenticado
-    if (userId) {
+    if (isDemoMode) {
+      // Modo demo en memoria
+      const demoTx: Transaction = {
+        ...txPayload,
+        id: `tx-${Date.now()}`,
+        userId: "demo-user",
+      };
+      setTransactions((prev) => [demoTx, ...prev]);
+    } else if (userId) {
       const supabase = createClient();
       const res = await createSupabaseTransaction(
         supabase,
@@ -346,22 +360,14 @@ export default function Home() {
       if (res.success && res.transaction) {
         setTransactions((prev) => [res.transaction!, ...prev]);
       } else {
-        // Fallback optimista si hubo error
-        const optimisticTx: Transaction = {
-          ...txPayload,
-          id: `tx-${Date.now()}`,
-          userId,
-        };
-        setTransactions((prev) => [optimisticTx, ...prev]);
+        alert(
+          `Error al guardar en Supabase Cloud: ${res.error || "No se pudo registrar"}. Tus datos no se han guardado.`
+        );
+        return;
       }
     } else {
-      // Modo demo en memoria
-      const demoTx: Transaction = {
-        ...txPayload,
-        id: `tx-${Date.now()}`,
-        userId: "demo-user",
-      };
-      setTransactions((prev) => [demoTx, ...prev]);
+      alert("No hay una sesión activa de Supabase. Inicia sesión para guardar movimientos.");
+      return;
     }
 
     // 2. Actualizar saldo local optimista
@@ -412,7 +418,14 @@ export default function Home() {
     const acc = accounts.find((a) => a.id === txData.accountId);
     const targetGoal = goals.find((g) => g.id === txData.goalId);
 
-    if (userId) {
+    if (isDemoMode) {
+      const demoTx: Transaction = {
+        ...txData,
+        id: `tx-${Date.now()}`,
+        userId: "demo-user",
+      };
+      setTransactions((prev) => [demoTx, ...prev]);
+    } else if (userId) {
       const supabase = createClient();
       const res = await createSupabaseTransaction(
         supabase,
@@ -424,20 +437,14 @@ export default function Home() {
       if (res.success && res.transaction) {
         setTransactions((prev) => [res.transaction!, ...prev]);
       } else {
-        const optimisticTx: Transaction = {
-          ...txData,
-          id: `tx-${Date.now()}`,
-          userId,
-        };
-        setTransactions((prev) => [optimisticTx, ...prev]);
+        alert(
+          `Error al registrar en Supabase Cloud: ${res.error || "No se pudo registrar"}. Tus datos no se han guardado.`
+        );
+        return;
       }
     } else {
-      const demoTx: Transaction = {
-        ...txData,
-        id: `tx-${Date.now()}`,
-        userId: "demo-user",
-      };
-      setTransactions((prev) => [demoTx, ...prev]);
+      alert("No hay sesión activa de Supabase. Inicia sesión para guardar la transacción.");
+      return;
     }
 
     if (txData.type === "saving_transfer" && txData.goalId) {
@@ -509,55 +516,74 @@ export default function Home() {
   const handleAddAccount = async (
     accountData: Omit<Account, "id" | "userId">
   ) => {
-    if (userId) {
-      const supabase = createClient();
-      const created = await createSupabaseAccount(supabase, userId, accountData);
-      if (created) {
-        setAccounts((prev) => [...prev, created]);
-        return;
-      }
+    if (isDemoMode) {
+      const newAcc: Account = {
+        ...accountData,
+        id: `acc-${Date.now()}`,
+        userId: "demo-user",
+      };
+      setAccounts((prev) => [...prev, newAcc]);
+      return;
     }
 
-    const newAcc: Account = {
-      ...accountData,
-      id: `acc-${Date.now()}`,
-      userId: userId || "demo-user",
-    };
-    setAccounts((prev) => [...prev, newAcc]);
+    if (!userId) {
+      alert("No tienes una sesión activa en Supabase Cloud. Por favor inicia sesión para guardar tu cuenta.");
+      return;
+    }
+
+    const supabase = createClient();
+    const res = await createSupabaseAccount(supabase, userId, accountData);
+    if (res.success && res.account) {
+      setAccounts((prev) => [...prev, res.account!]);
+    } else {
+      alert(`Error al guardar la cuenta en la nube: ${res.error || "Error desconocido"}`);
+    }
   };
 
   // Crear Meta de Ahorro (En Supabase Cloud)
   const handleAddGoal = async (
     goalData: Omit<SavingsGoal, "id" | "creatorId">
   ) => {
-    if (userId) {
-      const supabase = createClient();
-      const created = await createSupabaseGoal(supabase, userId, goalData);
-      if (created) {
-        setGoals((prev) => [...prev, created]);
-        return;
-      }
+    if (isDemoMode) {
+      const newGoal: SavingsGoal = {
+        ...goalData,
+        id: `goal-${Date.now()}`,
+        creatorId: "demo-user",
+        members: goalData.isCollaborative
+          ? [
+              {
+                id: `gm-${Date.now()}`,
+                goalId: `goal-${Date.now()}`,
+                userId: "demo-user",
+                userName: "Tú (Creador)",
+                contributedAmount: 0,
+                percentageContribution: 0,
+                joinedAt: new Date().toISOString(),
+              },
+            ]
+          : undefined,
+      };
+      setGoals((prev) => [...prev, newGoal]);
+      return;
     }
 
-    const newGoal: SavingsGoal = {
-      ...goalData,
-      id: `goal-${Date.now()}`,
-      creatorId: userId || "demo-user",
-      members: goalData.isCollaborative
-        ? [
-            {
-              id: `gm-${Date.now()}`,
-              goalId: `goal-${Date.now()}`,
-              userId: userId || "demo-user",
-              userName: "Tú (Creador)",
-              contributedAmount: 0,
-              percentageContribution: 0,
-              joinedAt: new Date().toISOString(),
-            },
-          ]
-        : undefined,
-    };
-    setGoals((prev) => [...prev, newGoal]);
+    if (!userId) {
+      alert(
+        "No tienes una sesión activa en Supabase Cloud. Por favor inicia sesión para que tus metas se guarden en la base de datos."
+      );
+      return;
+    }
+
+    const supabase = createClient();
+    const res = await createSupabaseGoal(supabase, userId, goalData);
+    if (res.success && res.goal) {
+      setGoals((prev) => [res.goal!, ...prev]);
+    } else {
+      console.error("Error al crear meta en Supabase:", res.error);
+      alert(
+        `Error al guardar la meta en la base de datos de Supabase:\n\n${res.error || "Error desconocido"}\n\nPor favor verifica tu conexión o vuelve a iniciar sesión.`
+      );
+    }
   };
 
   // Guardar Presupuestos (En Supabase Cloud)
@@ -586,15 +612,11 @@ export default function Home() {
     return (
       <LandingScreen
         onEnterDemo={handleEnterDemo}
-        onLoginSuccess={(email) => {
-          setUserEmail(email);
-          const supabase = createClient();
-          supabase.auth.getUser().then(({ data }) => {
-            if (data.user) {
-              setUserId(data.user.id);
-              loadCloudFinances(data.user.id);
-            }
-          });
+        onLoginSuccess={(user) => {
+          setUserId(user.id);
+          setUserEmail(user.email);
+          setIsDemoMode(false);
+          loadCloudFinances(user.id);
         }}
       />
     );
