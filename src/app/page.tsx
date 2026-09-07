@@ -271,7 +271,11 @@ export default function Home() {
   const handleContributeToGoal = async (goalId: string, amount: number) => {
     if (userId) {
       const supabase = createClient();
-      await contributeToSupabaseGoal(supabase, userId, goalId, amount);
+      const res = await contributeToSupabaseGoal(supabase, userId, goalId, amount);
+      if (res.success && res.goal) {
+        setGoals((prev) => prev.map((g) => (g.id === goalId ? res.goal! : g)));
+        return;
+      }
     }
 
     setGoals((prev) =>
@@ -359,6 +363,11 @@ export default function Home() {
       );
       if (res.success && res.transaction) {
         setTransactions((prev) => [res.transaction!, ...prev]);
+        if (res.updatedGoal) {
+          setGoals((prev) =>
+            prev.map((g) => (g.id === res.updatedGoal!.id ? res.updatedGoal! : g))
+          );
+        }
       } else {
         alert(
           `Error al guardar en Supabase Cloud: ${res.error || "No se pudo registrar"}. Tus datos no se han guardado.`
@@ -384,7 +393,7 @@ export default function Home() {
       );
     }
 
-    if (targetGoal) {
+    if (targetGoal && isDemoMode) {
       handleContributeToGoal(targetGoal.id, parsed.amount);
     }
 
@@ -436,6 +445,11 @@ export default function Home() {
       );
       if (res.success && res.transaction) {
         setTransactions((prev) => [res.transaction!, ...prev]);
+        if (res.updatedGoal) {
+          setGoals((prev) =>
+            prev.map((g) => (g.id === res.updatedGoal!.id ? res.updatedGoal! : g))
+          );
+        }
       } else {
         alert(
           `Error al registrar en Supabase Cloud: ${res.error || "No se pudo registrar"}. Tus datos no se han guardado.`
@@ -447,7 +461,7 @@ export default function Home() {
       return;
     }
 
-    if (txData.type === "saving_transfer" && txData.goalId) {
+    if (isDemoMode && txData.type === "saving_transfer" && txData.goalId) {
       handleContributeToGoal(txData.goalId, txData.amount);
     }
 
@@ -499,6 +513,39 @@ export default function Home() {
       );
     }
 
+    // Si la transacción eliminada era un aporte a una meta, descontar de la meta
+    if (tx?.goalId && tx.amount) {
+      setGoals((prev) =>
+        prev.map((g) => {
+          if (g.id === tx.goalId) {
+            const newCurrent = Math.max(0, g.currentAmount - tx.amount);
+            const updatedMembers = g.members?.map((m) => {
+              if (m.userId === (userId || "demo-user")) {
+                const updatedContrib = Math.max(0, m.contributedAmount - tx.amount);
+                return {
+                  ...m,
+                  contributedAmount: updatedContrib,
+                  percentageContribution:
+                    newCurrent > 0 ? (updatedContrib / newCurrent) * 100 : 0,
+                };
+              }
+              return {
+                ...m,
+                percentageContribution:
+                  newCurrent > 0 ? (m.contributedAmount / newCurrent) * 100 : 0,
+              };
+            });
+            return {
+              ...g,
+              currentAmount: newCurrent,
+              members: updatedMembers,
+            };
+          }
+          return g;
+        })
+      );
+    }
+
     if (userId) {
       const supabase = createClient();
       await deleteSupabaseTransaction(
@@ -507,7 +554,8 @@ export default function Home() {
         id,
         tx?.accountId,
         tx?.amount,
-        tx?.type
+        tx?.type,
+        tx?.goalId
       );
     }
   };

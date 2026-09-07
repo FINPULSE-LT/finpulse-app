@@ -22,6 +22,25 @@ export async function fetchUserFinances(
   supabase: SupabaseClient,
   userId: string
 ): Promise<UserFinancesData> {
+  // 0. Intentar cargar via API segura con permisos Admin (resuelve RLS en metas compartidas y nombres reales)
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/finances?userId=${encodeURIComponent(userId)}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          return json.data;
+        }
+      }
+    } catch (apiErr) {
+      console.warn("Fallo fetch a /api/finances, usando cliente directo:", apiErr);
+    }
+  }
+
   // 1. Obtener Perfil (o crearlo si es primera vez para integridad referencial)
   let profile: Profile | null = null;
   const { data: profileData } = await supabase
@@ -201,7 +220,38 @@ export async function createSupabaseTransaction(
   tx: Omit<Transaction, "id" | "userId">,
   targetAccount?: Account,
   targetGoal?: SavingsGoal
-): Promise<{ success: boolean; transaction?: Transaction; error?: string }> {
+): Promise<{ success: boolean; transaction?: Transaction; updatedGoal?: SavingsGoal; error?: string }> {
+  // Intentar mediante API segura en el servidor
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          transaction: tx,
+          accountId: targetAccount?.id,
+          goalId: targetGoal?.id,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return {
+          success: true,
+          transaction: data.transaction,
+          updatedGoal: data.updatedGoal || undefined,
+        };
+      } else if (!res.ok) {
+        return {
+          success: false,
+          error: data.error || "Error al registrar transacción",
+        };
+      }
+    } catch (apiErr: any) {
+      console.warn("Fallo POST /api/transactions, intentando cliente directo:", apiErr);
+    }
+  }
+
   try {
     const { data: inserted, error: txError } = await supabase
       .from("transactions")
@@ -303,8 +353,29 @@ export async function deleteSupabaseTransaction(
   txId: string,
   accountId?: string,
   amount?: number,
-  type?: string
+  type?: string,
+  goalId?: string
 ): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    try {
+      const params = new URLSearchParams({ userId, txId });
+      if (accountId) params.set("accountId", accountId);
+      if (amount !== undefined) params.set("amount", String(amount));
+      if (type) params.set("type", type);
+      if (goalId) params.set("goalId", goalId);
+
+      const res = await fetch(`/api/transactions?${params.toString()}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return true;
+      }
+    } catch (apiErr) {
+      console.warn("Fallo DELETE /api/transactions, usando cliente directo:", apiErr);
+    }
+  }
+
   const { error } = await supabase
     .from("transactions")
     .delete()
@@ -411,6 +482,24 @@ export async function createSupabaseGoal(
   userId: string,
   goal: Omit<SavingsGoal, "id" | "creatorId">
 ): Promise<{ success: boolean; goal?: SavingsGoal; error?: string }> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/goals/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, goal }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.goal) {
+        return { success: true, goal: data.goal };
+      } else if (!res.ok) {
+        return { success: false, error: data.error || "Error al crear meta" };
+      }
+    } catch (apiErr: any) {
+      console.warn("Fallo fetch /api/goals/create, usando fallback directo:", apiErr);
+    }
+  }
+
   try {
     // Asegurar integridad referencial con el perfil
     await supabase.from("profiles").upsert(
@@ -497,46 +586,68 @@ export async function contributeToSupabaseGoal(
   userId: string,
   goalId: string,
   amount: number
-): Promise<boolean> {
-  // 1. Obtener la meta actual
-  const { data: goal } = await supabase
-    .from("savings_goals")
-    .select("current_amount")
-    .eq("id", goalId)
-    .single();
-
-  if (!goal) return false;
-
-  const newCurrent = Number(goal.current_amount) + amount;
-  await supabase
-    .from("savings_goals")
-    .update({ current_amount: newCurrent })
-    .eq("id", goalId);
-
-  // 2. Actualizar o insertar aporte en goal_members
-  const { data: member } = await supabase
-    .from("goal_members")
-    .select("*")
-    .eq("goal_id", goalId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (member) {
-    await supabase
-      .from("goal_members")
-      .update({
-        contributed_amount: Number(member.contributed_amount) + amount,
-      })
-      .eq("id", member.id);
-  } else {
-    await supabase.from("goal_members").insert({
-      goal_id: goalId,
-      user_id: userId,
-      contributed_amount: amount,
-    });
+): Promise<{ success: boolean; goal?: SavingsGoal; error?: string }> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/goals/contribute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goalId, userId, amount }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.goal) {
+        return { success: true, goal: data.goal };
+      } else if (!res.ok) {
+        return { success: false, error: data.error || "Error al registrar aporte a la meta" };
+      }
+    } catch (apiErr: any) {
+      console.warn("Fallo fetch /api/goals/contribute, usando fallback directo:", apiErr);
+    }
   }
 
-  return true;
+  try {
+    // 1. Obtener la meta actual
+    const { data: goal } = await supabase
+      .from("savings_goals")
+      .select("current_amount")
+      .eq("id", goalId)
+      .single();
+
+    if (!goal) return { success: false, error: "Meta no encontrada" };
+
+    const newCurrent = Number(goal.current_amount) + amount;
+    await supabase
+      .from("savings_goals")
+      .update({ current_amount: newCurrent })
+      .eq("id", goalId);
+
+    // 2. Actualizar o insertar aporte en goal_members
+    const { data: member } = await supabase
+      .from("goal_members")
+      .select("*")
+      .eq("goal_id", goalId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (member) {
+      await supabase
+        .from("goal_members")
+        .update({
+          contributed_amount: Number(member.contributed_amount) + amount,
+        })
+        .eq("id", member.id);
+    } else {
+      await supabase.from("goal_members").insert({
+        goal_id: goalId,
+        user_id: userId,
+        contributed_amount: amount,
+      });
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
 /**
@@ -580,6 +691,24 @@ export async function joinSupabaseGoal(
   userId: string,
   inviteCodeOrGoalId: string
 ): Promise<{ success: boolean; goal?: SavingsGoal; error?: string }> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/goals/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, inviteCodeOrGoalId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.goal) {
+        return { success: true, goal: data.goal };
+      } else if (!res.ok) {
+        return { success: false, error: data.error || "Error al unirse a la meta" };
+      }
+    } catch (apiErr: any) {
+      console.warn("Fallo fetch /api/goals/join, usando fallback directo:", apiErr);
+    }
+  }
+
   try {
     const raw = inviteCodeOrGoalId.trim();
     // Extraer UUID si es un link o query param

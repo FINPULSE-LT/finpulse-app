@@ -290,8 +290,10 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
                     </span>
                     <div className="space-y-1">
                       {goal.members.map((m) => (
-                        <div key={m.id} className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-300 truncate max-w-[100px]">{m.userName}</span>
+                        <div key={m.id} className="flex items-center justify-between text-[11px] py-0.5">
+                          <span className="text-slate-300 truncate max-w-[140px] sm:max-w-[180px] font-medium" title={m.userName}>
+                            {m.userName}
+                          </span>
                           <span className="font-mono text-cyan-300 font-semibold text-[10px]">
                             {formatCurrency(m.contributedAmount)} ({formatPercentage(m.percentageContribution)})
                           </span>
