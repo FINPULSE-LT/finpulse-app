@@ -25,9 +25,14 @@ import { createClient } from "@/lib/supabase/client";
 import {
   fetchUserFinances,
   createSupabaseTransaction,
+  updateSupabaseTransaction,
   deleteSupabaseTransaction,
   createSupabaseAccount,
+  updateSupabaseAccount,
+  deleteSupabaseAccount,
+  transferBetweenSupabaseAccounts,
   createSupabaseGoal,
+  updateSupabaseGoal,
   contributeToSupabaseGoal,
   joinSupabaseGoal,
   updateSupabaseBudgets,
@@ -64,6 +69,12 @@ export default function Home() {
     "dashboard" | "transactions" | "accounts" | "goals" | "reports"
   >("dashboard");
 
+  // Tema Visual Dark / Light Mode
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  // Movimiento en proceso de edición
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
   // Estados de Gamificación (Inician en 0 para usuarios nuevos)
   const [streakCount, setStreakCount] = useState<number>(0);
   const [rescuedMoney, setRescuedMoney] = useState<number>(0);
@@ -75,6 +86,18 @@ export default function Home() {
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Alternar Tema Dark / Light
+  const handleToggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("finpulse_theme", next);
+      document.documentElement.classList.toggle("dark", next === "dark");
+      document.documentElement.classList.toggle("light", next === "light");
+      document.body.classList.toggle("light", next === "light");
+    }
+  };
 
   /**
    * Carga los datos financieros directamente desde Supabase Cloud
@@ -108,6 +131,15 @@ export default function Home() {
   // Carga inicial y Detección de Usuario en Supabase
   useEffect(() => {
     const supabase = createClient();
+
+    // 0. Cargar preferencia de tema visual
+    if (typeof window !== "undefined") {
+      const savedTheme = (localStorage.getItem("finpulse_theme") as "dark" | "light") || "dark";
+      setTheme(savedTheme);
+      document.documentElement.classList.toggle("dark", savedTheme === "dark");
+      document.documentElement.classList.toggle("light", savedTheme === "light");
+      document.body.classList.toggle("light", savedTheme === "light");
+    }
 
     // 1. Verificar sesión persistida localmente (sólo tokens/id, nunca datos financieros)
     if (typeof window !== "undefined") {
@@ -560,6 +592,83 @@ export default function Home() {
     }
   };
 
+  // Iniciar Edición de Transacción
+  const handleEditTransaction = (tx: Transaction) => {
+    setEditingTransaction(tx);
+  };
+
+  // Guardar Transacción Editada (En Supabase Cloud)
+  const handleSaveEditedTransaction = async (
+    txData: Omit<Transaction, "id" | "userId">
+  ) => {
+    if (!editingTransaction) return;
+
+    if (isDemoMode) {
+      const updatedTx: Transaction = {
+        ...txData,
+        id: editingTransaction.id,
+        userId: editingTransaction.userId,
+      };
+
+      // Revertir saldo en cuenta anterior
+      if (editingTransaction.accountId) {
+        const revertDiff =
+          editingTransaction.type === "income"
+            ? -editingTransaction.amount
+            : editingTransaction.amount;
+        setAccounts((prev) =>
+          prev.map((a) =>
+            a.id === editingTransaction.accountId
+              ? { ...a, balance: a.balance + revertDiff }
+              : a
+          )
+        );
+      }
+
+      // Aplicar saldo en cuenta nueva/actual
+      if (txData.accountId) {
+        const applyDiff =
+          txData.type === "income" ? txData.amount : -txData.amount;
+        setAccounts((prev) =>
+          prev.map((a) =>
+            a.id === txData.accountId
+              ? { ...a, balance: a.balance + applyDiff }
+              : a
+          )
+        );
+      }
+
+      setTransactions((prev) =>
+        prev.map((t) => (t.id === editingTransaction.id ? updatedTx : t))
+      );
+      setEditingTransaction(null);
+      return;
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      const res = await updateSupabaseTransaction(
+        supabase,
+        userId,
+        editingTransaction.id,
+        txData,
+        txData.accountId,
+        txData.goalId
+      );
+
+      if (res.success && res.transaction) {
+        setTransactions((prev) =>
+          prev.map((t) => (t.id === editingTransaction.id ? res.transaction! : t))
+        );
+        // Sincronizar saldos de cuentas y metas desde la nube
+        await loadCloudFinances(userId);
+        setEditingTransaction(null);
+      } else {
+        alert(`Error al actualizar el movimiento: ${res.error || "Error desconocido"}`);
+      }
+    }
+  };
+
   // Crear Cuenta (En Supabase Cloud)
   const handleAddAccount = async (
     accountData: Omit<Account, "id" | "userId">
@@ -585,6 +694,127 @@ export default function Home() {
       setAccounts((prev) => [...prev, res.account!]);
     } else {
       alert(`Error al guardar la cuenta en la nube: ${res.error || "Error desconocido"}`);
+    }
+  };
+
+  // Editar Cuenta (En Supabase Cloud)
+  const handleUpdateAccount = async (accountData: Partial<Account> & { id: string }) => {
+    if (isDemoMode) {
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === accountData.id ? { ...a, ...accountData } : a))
+      );
+      return;
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      const res = await updateSupabaseAccount(supabase, userId, accountData);
+      if (res.success && res.account) {
+        setAccounts((prev) =>
+          prev.map((a) => (a.id === accountData.id ? res.account! : a))
+        );
+      } else {
+        alert(`Error al actualizar la cuenta: ${res.error || "Error desconocido"}`);
+      }
+    }
+  };
+
+  // Eliminar Cuenta (En Supabase Cloud)
+  const handleDeleteAccount = async (accountId: string) => {
+    if (isDemoMode) {
+      setAccounts((prev) => prev.filter((a) => a.id !== accountId));
+      return;
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      const res = await deleteSupabaseAccount(supabase, userId, accountId);
+      if (res.success) {
+        setAccounts((prev) => prev.filter((a) => a.id !== accountId));
+      } else {
+        alert(`Error al eliminar la cuenta: ${res.error || "Error desconocido"}`);
+      }
+    }
+  };
+
+  // Transferencia entre Cuentas (En Supabase Cloud)
+  const handleTransferBetweenAccounts = async (
+    fromAccountId: string,
+    toAccountId: string,
+    amount: number,
+    notes?: string
+  ) => {
+    if (isDemoMode) {
+      const fromAcc = accounts.find((a) => a.id === fromAccountId);
+      const toAcc = accounts.find((a) => a.id === toAccountId);
+      if (!fromAcc || !toAcc) return;
+
+      setAccounts((prev) =>
+        prev.map((a) => {
+          if (a.id === fromAccountId) return { ...a, balance: a.balance - amount };
+          if (a.id === toAccountId) return { ...a, balance: a.balance + amount };
+          return a;
+        })
+      );
+
+      const expenseTx: Transaction = {
+        id: `tx-transfer-out-${Date.now()}`,
+        userId: "demo-user",
+        accountId: fromAccountId,
+        accountName: fromAcc.name,
+        type: "expense",
+        amount,
+        category: "transferencia",
+        description: `Transferencia a ${toAcc.name}${notes ? ` - ${notes}` : ""}`,
+        transactedAt: new Date().toISOString(),
+        isAntExpense: false,
+        installmentsTotal: 1,
+        installmentCurrent: 1,
+      };
+
+      const incomeTx: Transaction = {
+        id: `tx-transfer-in-${Date.now() + 1}`,
+        userId: "demo-user",
+        accountId: toAccountId,
+        accountName: toAcc.name,
+        type: "income",
+        amount,
+        category: "transferencia",
+        description: `Transferencia desde ${fromAcc.name}${notes ? ` - ${notes}` : ""}`,
+        transactedAt: new Date().toISOString(),
+        isAntExpense: false,
+        installmentsTotal: 1,
+        installmentCurrent: 1,
+      };
+
+      setTransactions((prev) => [expenseTx, incomeTx, ...prev]);
+      return;
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      const res = await transferBetweenSupabaseAccounts(
+        supabase,
+        userId,
+        fromAccountId,
+        toAccountId,
+        amount,
+        notes
+      );
+      if (res.success && res.fromAccount && res.toAccount) {
+        setAccounts((prev) =>
+          prev.map((a) => {
+            if (a.id === fromAccountId) return res.fromAccount!;
+            if (a.id === toAccountId) return res.toAccount!;
+            return a;
+          })
+        );
+        if (res.transactions && res.transactions.length > 0) {
+          setTransactions((prev) => [...res.transactions!, ...prev]);
+        }
+      } else {
+        alert(`Error en la transferencia: ${res.error || "Error desconocido"}`);
+      }
     }
   };
 
@@ -631,6 +861,62 @@ export default function Home() {
       alert(
         `Error al guardar la meta en la base de datos de Supabase:\n\n${res.error || "Error desconocido"}\n\nPor favor verifica tu conexión o vuelve a iniciar sesión.`
       );
+    }
+  };
+
+  // Editar Meta de Ahorro y Aportes (En Supabase Cloud)
+  const handleUpdateGoal = async (
+    goalId: string,
+    data: {
+      title: string;
+      targetAmount: number;
+      targetDate?: string;
+      isCollaborative?: boolean;
+      memberContributions?: { userId: string; amount: number }[];
+    }
+  ) => {
+    if (isDemoMode) {
+      setGoals((prev) =>
+        prev.map((g) => {
+          if (g.id === goalId) {
+            const updatedMembers = data.memberContributions
+              ? g.members?.map((m) => {
+                  const match = data.memberContributions?.find(
+                    (mc) => mc.userId === m.userId
+                  );
+                  return match
+                    ? { ...m, contributedAmount: match.amount }
+                    : m;
+                })
+              : g.members;
+            const newCurrent = updatedMembers
+              ? updatedMembers.reduce((sum, m) => sum + m.contributedAmount, 0)
+              : g.currentAmount;
+
+            return {
+              ...g,
+              title: data.title,
+              targetAmount: data.targetAmount,
+              targetDate: data.targetDate,
+              isCollaborative: data.isCollaborative ?? g.isCollaborative,
+              currentAmount: newCurrent,
+              members: updatedMembers,
+            };
+          }
+          return g;
+        })
+      );
+      return;
+    }
+
+    if (userId) {
+      const supabase = createClient();
+      const res = await updateSupabaseGoal(supabase, userId, goalId, data);
+      if (res.success && res.goal) {
+        setGoals((prev) => prev.map((g) => (g.id === goalId ? res.goal! : g)));
+      } else {
+        alert(`Error al actualizar la meta: ${res.error || "Error desconocido"}`);
+      }
     }
   };
 
@@ -681,6 +967,8 @@ export default function Home() {
         isDemoMode={isDemoMode}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -784,6 +1072,7 @@ export default function Home() {
                 <TransactionList
                   transactions={transactions}
                   onDeleteTransaction={handleDeleteTransaction}
+                  onEditTransaction={handleEditTransaction}
                 />
               </div>
 
@@ -813,6 +1102,9 @@ export default function Home() {
                 <AccountsWidget
                   accounts={accounts}
                   onAddAccount={handleAddAccount}
+                  onUpdateAccount={handleUpdateAccount}
+                  onDeleteAccount={handleDeleteAccount}
+                  onTransferBetweenAccounts={handleTransferBetweenAccounts}
                 />
 
                 <GoalsWidget
@@ -820,6 +1112,7 @@ export default function Home() {
                   onAddGoal={handleAddGoal}
                   onContributeToGoal={handleContributeToGoal}
                   onJoinGoal={handleJoinGoal}
+                  onUpdateGoal={handleUpdateGoal}
                   creatorName={userEmail?.split("@")[0] || "Lisandro"}
                 />
               </div>
@@ -833,6 +1126,7 @@ export default function Home() {
             <TransactionList
               transactions={transactions}
               onDeleteTransaction={handleDeleteTransaction}
+              onEditTransaction={handleEditTransaction}
             />
           </div>
         )}
@@ -841,6 +1135,9 @@ export default function Home() {
           <AccountsWidget
             accounts={accounts}
             onAddAccount={handleAddAccount}
+            onUpdateAccount={handleUpdateAccount}
+            onDeleteAccount={handleDeleteAccount}
+            onTransferBetweenAccounts={handleTransferBetweenAccounts}
           />
         )}
 
@@ -850,6 +1147,7 @@ export default function Home() {
             onAddGoal={handleAddGoal}
             onContributeToGoal={handleContributeToGoal}
             onJoinGoal={handleJoinGoal}
+            onUpdateGoal={handleUpdateGoal}
             creatorName={userEmail?.split("@")[0] || "Lisandro"}
           />
         )}
@@ -889,6 +1187,17 @@ export default function Home() {
         goals={goals}
         onSave={handleSaveManualTransaction}
       />
+
+      {editingTransaction && (
+        <TransactionFormModal
+          isOpen={!!editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          accounts={accounts}
+          goals={goals}
+          initialTransaction={editingTransaction}
+          onSave={handleSaveEditedTransaction}
+        />
+      )}
 
       <ShortcutsModal
         isOpen={isShortcutsModalOpen}

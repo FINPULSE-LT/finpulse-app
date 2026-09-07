@@ -14,6 +14,8 @@ import {
   Trophy,
   BarChart3,
   Sparkles,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 interface NavbarProps {
@@ -24,6 +26,8 @@ interface NavbarProps {
   isDemoMode?: boolean;
   onOpenAuthModal?: () => void;
   onLogout?: () => void;
+  theme?: "dark" | "light";
+  onToggleTheme?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -34,6 +38,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   isDemoMode,
   onOpenAuthModal,
   onLogout,
+  theme = "dark",
+  onToggleTheme,
 }) => {
   const { hapticTap, hapticWarning } = useHaptics();
 
@@ -115,6 +121,24 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Acciones del Lado Derecho */}
         <div className="flex items-center gap-2.5">
+          {/* Botón de Tema Light / Dark */}
+          {onToggleTheme && (
+            <button
+              onClick={() => {
+                hapticTap();
+                onToggleTheme();
+              }}
+              className="p-2.5 rounded-xl bg-[#081712] hover:bg-[#0D241C] text-slate-300 hover:text-amber-400 border border-emerald-900/50 transition-colors shadow-sm"
+              title={theme === "light" ? "Cambiar a Modo Oscuro" : "Cambiar a Modo Claro"}
+            >
+              {theme === "light" ? (
+                <Moon className="w-4 h-4 text-indigo-400" />
+              ) : (
+                <Sun className="w-4 h-4 text-amber-400" />
+              )}
+            </button>
+          )}
+
           {/* Botón de Atajos */}
           <button
             onClick={() => {

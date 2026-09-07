@@ -810,3 +810,228 @@ export async function joinSupabaseGoal(
     return { success: false, error: err.message || "Error al unirse a la meta" };
   }
 }
+
+/**
+ * Actualiza los datos de una cuenta existente
+ */
+export async function updateSupabaseAccount(
+  supabase: SupabaseClient,
+  userId: string,
+  accountData: Partial<Account> & { id: string }
+): Promise<{ success: boolean; account?: Account; error?: string }> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          accountId: accountData.id,
+          name: accountData.name,
+          accountType: accountData.accountType,
+          balance: accountData.balance,
+          colorHex: accountData.colorHex,
+          closingDay: accountData.closingDay,
+          dueDay: accountData.dueDay,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return { success: true, account: data.account };
+      }
+      return { success: false, error: data.error || "Error al actualizar la cuenta" };
+    } catch (err: any) {
+      console.warn("Fallo PATCH /api/accounts, intentando cliente directo:", err);
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("accounts")
+    .update({
+      name: accountData.name,
+      account_type: accountData.accountType,
+      balance: accountData.balance,
+      color_hex: accountData.colorHex,
+      closing_day: accountData.closingDay || null,
+      due_day: accountData.dueDay || null,
+    })
+    .eq("id", accountData.id)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error || !data) {
+    return { success: false, error: error?.message || "Error al actualizar cuenta" };
+  }
+
+  return {
+    success: true,
+    account: {
+      id: data.id,
+      userId: data.user_id,
+      name: data.name,
+      accountType: data.account_type,
+      balance: Number(data.balance) || 0,
+      closingDay: data.closing_day || undefined,
+      dueDay: data.due_day || undefined,
+      colorHex: data.color_hex || "#10b981",
+      cardNetwork: data.card_network || undefined,
+      lastFourDigits: data.last_four_digits || undefined,
+      createdAt: data.created_at,
+    },
+  };
+}
+
+/**
+ * Elimina una cuenta bancaria o billetera
+ */
+export async function deleteSupabaseAccount(
+  supabase: SupabaseClient,
+  userId: string,
+  accountId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch(`/api/accounts?userId=${encodeURIComponent(userId)}&accountId=${encodeURIComponent(accountId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return { success: true };
+      }
+      return { success: false, error: data.error || "Error al eliminar la cuenta" };
+    } catch (err: any) {
+      console.warn("Fallo DELETE /api/accounts, intentando cliente directo:", err);
+    }
+  }
+
+  await supabase.from("transactions").update({ account_id: null }).eq("account_id", accountId).eq("user_id", userId);
+  const { error } = await supabase.from("accounts").delete().eq("id", accountId).eq("user_id", userId);
+  return { success: !error, error: error?.message };
+}
+
+/**
+ * Realiza una transferencia entre dos cuentas del usuario
+ */
+export async function transferBetweenSupabaseAccounts(
+  supabase: SupabaseClient,
+  userId: string,
+  fromAccountId: string,
+  toAccountId: string,
+  amount: number,
+  notes?: string
+): Promise<{
+  success: boolean;
+  fromAccount?: Account;
+  toAccount?: Account;
+  transactions?: Transaction[];
+  error?: string;
+}> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/accounts/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          fromAccountId,
+          toAccountId,
+          amount,
+          notes,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return {
+          success: true,
+          fromAccount: data.fromAccount,
+          toAccount: data.toAccount,
+          transactions: data.transactions,
+        };
+      }
+      return { success: false, error: data.error || "Error en la transferencia" };
+    } catch (err: any) {
+      console.error("Error en transferBetweenSupabaseAccounts:", err);
+      return { success: false, error: err.message };
+    }
+  }
+  return { success: false, error: "Sólo disponible en entorno con conexión al servidor" };
+}
+
+/**
+ * Modifica una transacción existente
+ */
+export async function updateSupabaseTransaction(
+  supabase: SupabaseClient,
+  userId: string,
+  txId: string,
+  tx: Omit<Transaction, "id" | "userId">,
+  accountId?: string,
+  goalId?: string
+): Promise<{ success: boolean; transaction?: Transaction; error?: string }> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          txId,
+          transaction: tx,
+          accountId,
+          goalId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        return { success: true, transaction: data.transaction };
+      }
+      return { success: false, error: data.error || "Error al actualizar la transacción" };
+    } catch (err: any) {
+      console.error("Error en updateSupabaseTransaction:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  return { success: false, error: "No disponible sin conexión al servidor" };
+}
+
+/**
+ * Actualiza una meta de ahorro y los montos aportados por cada miembro
+ */
+export async function updateSupabaseGoal(
+  supabase: SupabaseClient,
+  userId: string,
+  goalId: string,
+  goalData: {
+    title: string;
+    targetAmount: number;
+    targetDate?: string;
+    isCollaborative?: boolean;
+    memberContributions?: { userId: string; amount: number }[];
+  }
+): Promise<{ success: boolean; goal?: SavingsGoal; error?: string }> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/goals/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          goalId,
+          ...goalData,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.goal) {
+        return { success: true, goal: data.goal };
+      }
+      return { success: false, error: data.error || "Error al actualizar la meta" };
+    } catch (err: any) {
+      console.error("Error en updateSupabaseGoal:", err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  return { success: false, error: "No disponible sin conexión al servidor" };
+}

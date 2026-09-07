@@ -5,16 +5,27 @@ import { SavingsGoal } from "@/types";
 import { formatCurrency, formatPercentage } from "@/lib/formatters/currency";
 import { LABELS } from "@/constants/labels";
 import { useHaptics } from "@/hooks/useHaptics";
-import { Trophy, Users, User, Plus, Share2, Target, Check, Sparkles } from "lucide-react";
+import { Trophy, Users, User, Plus, Share2, Target, Check, Sparkles, Edit3 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { ShareGoalModal } from "./ShareGoalModal";
 import { JoinGoalModal } from "./JoinGoalModal";
+import { EditGoalModal } from "./EditGoalModal";
 
 interface GoalsWidgetProps {
   goals: SavingsGoal[];
   onAddGoal: (goal: Omit<SavingsGoal, "id" | "creatorId">) => void;
   onContributeToGoal: (goalId: string, amount: number) => void;
   onJoinGoal?: (code: string) => Promise<{ success: boolean; error?: string; goalTitle?: string }>;
+  onUpdateGoal?: (
+    goalId: string,
+    data: {
+      title: string;
+      targetAmount: number;
+      targetDate?: string;
+      isCollaborative?: boolean;
+      memberContributions?: { userId: string; amount: number }[];
+    }
+  ) => Promise<void>;
   creatorName?: string;
 }
 
@@ -23,10 +34,12 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
   onAddGoal,
   onContributeToGoal,
   onJoinGoal,
+  onUpdateGoal,
   creatorName = "Tú",
 }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [sharingGoal, setSharingGoal] = useState<SavingsGoal | null>(null);
+  const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [targetAmount, setTargetAmount] = useState("");
@@ -244,10 +257,25 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
                     </span>
                   </div>
 
-                  {/* Porcentaje en Chip Violeta (Sin Desborde) */}
-                  <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 text-xs font-mono font-black shrink-0">
-                    {formatPercentage(percent)}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Porcentaje en Chip Violeta (Sin Desborde) */}
+                    <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 text-xs font-mono font-black shrink-0">
+                      {formatPercentage(percent)}
+                    </span>
+
+                    {onUpdateGoal && (
+                      <button
+                        onClick={() => {
+                          hapticTap();
+                          setEditingGoal(goal);
+                        }}
+                        className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                        title="Editar meta y montos aportados"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-purple-400" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Título de la Meta en su Propia Línea */}
@@ -376,6 +404,16 @@ export const GoalsWidget: React.FC<GoalsWidgetProps> = ({
           isOpen={isJoinModalOpen}
           onClose={() => setIsJoinModalOpen(false)}
           onJoinGoal={onJoinGoal}
+        />
+      )}
+
+      {/* Modal para Editar Meta y Aportes */}
+      {onUpdateGoal && (
+        <EditGoalModal
+          isOpen={!!editingGoal}
+          onClose={() => setEditingGoal(null)}
+          goal={editingGoal}
+          onSave={onUpdateGoal}
         />
       )}
     </div>

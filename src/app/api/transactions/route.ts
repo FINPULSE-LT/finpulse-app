@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/serverAdmin";
 import { Transaction, SavingsGoal, GoalMember } from "@/types";
 
@@ -283,3 +283,144 @@ export async function DELETE(request: Request) {
     );
   }
 }
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { userId, txId, transaction, accountId, goalId } = body;
+
+    if (!userId || !txId || !transaction) {
+      return NextResponse.json(
+        { error: "Parametros requeridos: userId, txId, transaction" },
+        { status: 400 }
+      );
+    }
+
+    const admin = createAdminClient();
+
+    // 1. Obtener transaccion anterior
+    const { data: oldTx, error: oldError } = await admin
+      .from("transactions")
+      .select("*")
+      .eq("id", txId)
+      .eq("user_id", userId)
+      .single();
+
+    if (oldError || !oldTx) {
+      return NextResponse.json({ error: "Movimiento no encontrado" }, { status: 404 });
+    }
+
+    // 2. Revertir saldo en cuenta anterior
+    const oldAmount = Number(oldTx.amount);
+    const newAmount = Number(transaction.amount);
+    const oldAccId = oldTx.account_id;
+    const newAccId = accountId || transaction.accountId || null;
+
+    if (oldAccId === newAccId && oldAccId) {
+      // Misma cuenta, calcular diferencia neta
+      const { data: acc } = await admin.from("accounts").select("balance").eq("id", oldAccId).single();
+      if (acc) {
+        const revertOld = oldTx.type === "income" ? -oldAmount : oldAmount;
+        const applyNew = transaction.type === "income" ? newAmount : -newAmount;
+        const newBalance = Number(acc.balance) + revertOld + applyNew;
+        await admin.from("accounts").update({ balance: newBalance }).eq("id", oldAccId);
+      }
+    } else {
+      // Cuentas distintas: revertir en la vieja y aplicar en la nueva
+      if (oldAccId) {
+        const { data: oldAcc } = await admin.from("accounts").select("balance").eq("id", oldAccId).single();
+        if (oldAcc) {
+          const revertOld = oldTx.type === "income" ? -oldAmount : oldAmount;
+          await admin.from("accounts").update({ balance: Number(oldAcc.balance) + revertOld }).eq("id", oldAccId);
+        }
+      }
+      if (newAccId) {
+        const { data: newAcc } = await admin.from("accounts").select("balance").eq("id", newAccId).single();
+        if (newAcc) {
+          const applyNew = transaction.type === "income" ? newAmount : -newAmount;
+          await admin.from("accounts").update({ balance: Number(newAcc.balance) + applyNew }).eq("id", newAccId);
+        }
+      }
+    }
+
+    // 3. Revertir aporte en meta anterior si existía
+    const resolvedGoalId = goalId || transaction.goalId || null;
+    let updatedGoal: SavingsGoal | null = null;
+
+    if (resolvedGoalId) {
+      const { data: member } = await admin
+        .from("goal_members")
+        .select("*")
+        .eq("goal_id", resolvedGoalId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const diffContrib = (transaction.type === "saving_transfer" ? newAmount : 0) - (oldTx.type === "saving_transfer" ? oldAmount : 0);
+
+      if (member) {
+        const updatedContrib = Math.max(0, (Number(member.contributed_amount) || 0) + diffContrib);
+        await admin.from("goal_members").update({ contributed_amount: updatedContrib }).eq("id", member.id);
+      } else if (diffContrib > 0) {
+        await admin.from("goal_members").insert({
+          goal_id: resolvedGoalId,
+          user_id: userId,
+          contributed_amount: diffContrib,
+        });
+      }
+
+      // Recalcular meta
+      const { data: allMembers } = await admin.from("goal_members").select("*").eq("goal_id", resolvedGoalId);
+      const totalContributed = (allMembers || []).reduce((sum, m) => sum + (Number(m.contributed_amount) || 0), 0);
+      await admin.from("savings_goals").update({ current_amount: totalContributed }).eq("id", resolvedGoalId);
+    }
+
+    // 4. Actualizar transaccion
+    const { data: updated, error: updateErr } = await admin
+      .from("transactions")
+      .update({
+        account_id: newAccId,
+        type: transaction.type,
+        amount: newAmount,
+        category: transaction.category,
+        description: transaction.description,
+        notes: transaction.notes || null,
+        is_ant_expense: transaction.isAntExpense ?? false,
+        installments_total: transaction.installmentsTotal || 1,
+        statement_date: transaction.statementDate || null,
+        transacted_at: transaction.transactedAt || new Date().toISOString(),
+      })
+      .eq("id", txId)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (updateErr || !updated) {
+      return NextResponse.json({ error: updateErr?.message || "Error al actualizar transaccion" }, { status: 500 });
+    }
+
+    const updatedTx: Transaction = {
+      id: updated.id,
+      userId: updated.user_id,
+      accountId: updated.account_id || undefined,
+      accountName: transaction.accountName,
+      goalId: resolvedGoalId || undefined,
+      goalTitle: transaction.goalTitle,
+      type: updated.type,
+      amount: Number(updated.amount),
+      category: updated.category,
+      description: updated.description,
+      notes: updated.notes || undefined,
+      isAntExpense: updated.is_ant_expense,
+      installmentsTotal: updated.installments_total,
+      installmentCurrent: updated.installment_current,
+      statementDate: updated.statement_date || undefined,
+      transactedAt: updated.transacted_at,
+    };
+
+    return NextResponse.json({ success: true, transaction: updatedTx });
+  } catch (err: any) {
+    console.error("Error in PATCH /api/transactions:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+

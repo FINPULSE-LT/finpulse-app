@@ -25,16 +25,19 @@ import {
   Trash2,
   Calendar,
   Target,
+  Edit3,
 } from "lucide-react";
 
 interface TransactionListProps {
   transactions: Transaction[];
   onDeleteTransaction: (id: string) => void;
+  onEditTransaction?: (transaction: Transaction) => void;
 }
 
 export const TransactionList: React.FC<TransactionListProps> = ({
   transactions,
   onDeleteTransaction,
+  onEditTransaction,
 }) => {
   const [filterType, setFilterType] = useState<"all" | "expense" | "income" | "saving" | "ant">("all");
   const { hapticTap, hapticWarning } = useHaptics();
@@ -240,16 +243,31 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 </span>
               </div>
 
-              <button
-                onClick={() => {
-                  hapticWarning();
-                  onDeleteTransaction(tx.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/15 rounded-xl transition-all"
-                title="Eliminar movimiento"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                {onEditTransaction && (
+                  <button
+                    onClick={() => {
+                      hapticTap();
+                      onEditTransaction(tx);
+                    }}
+                    className="p-1.5 sm:opacity-0 group-hover:opacity-100 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all"
+                    title="Editar movimiento"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    hapticWarning();
+                    onDeleteTransaction(tx.id);
+                  }}
+                  className="p-1.5 sm:opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 hover:bg-rose-500/15 rounded-xl transition-all"
+                  title="Eliminar movimiento"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         ))}

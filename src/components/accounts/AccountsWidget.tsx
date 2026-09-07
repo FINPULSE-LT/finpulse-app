@@ -5,18 +5,28 @@ import { Account } from "@/types";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { LABELS } from "@/constants/labels";
 import { useHaptics } from "@/hooks/useHaptics";
-import { CreditCard, Wallet, Landmark, Banknote, Plus, Calendar, Clock } from "lucide-react";
+import { CreditCard, Wallet, Landmark, Banknote, Plus, Calendar, Clock, ArrowRightLeft, Edit3 } from "lucide-react";
+import { AccountTransferModal } from "./AccountTransferModal";
+import { EditAccountModal } from "./EditAccountModal";
 
 interface AccountsWidgetProps {
   accounts: Account[];
   onAddAccount: (account: Omit<Account, "id" | "userId">) => void;
+  onUpdateAccount?: (account: Partial<Account> & { id: string }) => Promise<void>;
+  onDeleteAccount?: (accountId: string) => Promise<void>;
+  onTransferBetweenAccounts?: (fromAccountId: string, toAccountId: string, amount: number, notes?: string) => Promise<void>;
 }
 
 export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
   accounts,
   onAddAccount,
+  onUpdateAccount,
+  onDeleteAccount,
+  onTransferBetweenAccounts,
 }) => {
   const [isAdding, setIsAdding] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState<Account["accountType"]>("bank");
   const [balance, setBalance] = useState("");
@@ -80,20 +90,36 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
             {LABELS.nav.accounts}
           </h3>
           <span className="text-xs text-slate-400">
-            Saldos, billeteras y tarjetas con ciclo de corte
+            Saldos, billeteras, transferencias y tarjetas con ciclo de corte
           </span>
         </div>
 
-        <button
-          onClick={() => {
-            hapticTap();
-            setIsAdding(!isAdding);
-          }}
-          className="p-1.5 px-3 rounded-xl bg-[#0E1526] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
-        >
-          <Plus className="w-3.5 h-3.5 text-[#00F5A0]" />
-          <span>Nueva cuenta</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onTransferBetweenAccounts && accounts.length >= 2 && (
+            <button
+              onClick={() => {
+                hapticTap();
+                setIsTransferModalOpen(true);
+              }}
+              className="p-1.5 px-3 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 hover:text-white border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+              title="Mover dinero entre tus cuentas"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Transferir</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              hapticTap();
+              setIsAdding(!isAdding);
+            }}
+            className="p-1.5 px-3 rounded-xl bg-[#0E1526] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5 text-[#00F5A0]" />
+            <span>Nueva cuenta</span>
+          </button>
+        </div>
       </div>
 
       {/* Formulario Rápido de Nueva Cuenta */}
@@ -192,13 +218,13 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
           return (
             <div
               key={acc.id}
-              className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between ${
+              className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between group ${
                 isCard
                   ? "bg-gradient-to-br from-[#0B1220] via-[#0E1729] to-[#0B1528] border-cyan-500/30 hover:border-cyan-400/60 shadow-md"
                   : "bg-[#070A12]/90 border-slate-800 hover:border-slate-700 shadow-sm"
               }`}
             >
-              {/* Cabecera de la Tarjeta: Icono + Badge de Tipo */}
+              {/* Cabecera de la Tarjeta: Icono + Badge de Tipo + Botón Editar */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-[#090D18] border border-slate-700/80 flex items-center justify-center shrink-0 shadow-inner">
@@ -209,21 +235,35 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
                   </span>
                 </div>
 
-                {acc.cardNetwork && (
-                  <span className="text-[10px] uppercase font-mono font-black text-cyan-400 tracking-wider">
-                    {acc.cardNetwork}
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {acc.cardNetwork && (
+                    <span className="text-[10px] uppercase font-mono font-black text-cyan-400 tracking-wider">
+                      {acc.cardNetwork}
+                    </span>
+                  )}
+                  {onUpdateAccount && (
+                    <button
+                      onClick={() => {
+                        hapticTap();
+                        setEditingAccount(acc);
+                      }}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                      title="Editar cuenta"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Nombre de la Cuenta (Línea Dedicada sin Colisión) */}
+              {/* Nombre de la Cuenta */}
               <div className="mt-3">
                 <h4 className="text-sm font-black text-white tracking-tight truncate" title={acc.name}>
                   {acc.name}
                 </h4>
               </div>
 
-              {/* Saldo de la Cuenta (Fila Separada con Formato Claro) */}
+              {/* Saldo de la Cuenta */}
               <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-baseline justify-between">
                 <span className="text-[10px] uppercase font-mono text-slate-400 font-bold">
                   {isCard ? "Consumido:" : "Disponible:"}
@@ -250,6 +290,27 @@ export const AccountsWidget: React.FC<AccountsWidgetProps> = ({
           );
         })}
       </div>
+
+      {/* Modal de Transferencia entre Cuentas */}
+      {onTransferBetweenAccounts && (
+        <AccountTransferModal
+          isOpen={isTransferModalOpen}
+          onClose={() => setIsTransferModalOpen(false)}
+          accounts={accounts}
+          onTransfer={onTransferBetweenAccounts}
+        />
+      )}
+
+      {/* Modal de Edición de Cuenta */}
+      {onUpdateAccount && onDeleteAccount && (
+        <EditAccountModal
+          isOpen={!!editingAccount}
+          onClose={() => setEditingAccount(null)}
+          account={editingAccount}
+          onSave={onUpdateAccount}
+          onDelete={onDeleteAccount}
+        />
+      )}
     </div>
   );
 };

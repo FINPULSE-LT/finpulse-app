@@ -17,6 +17,7 @@ interface TransactionFormModalProps {
   accounts: Account[];
   goals?: SavingsGoal[];
   onSave: (transaction: Omit<Transaction, "id" | "userId">) => void;
+  initialTransaction?: Transaction | null;
 }
 
 export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
@@ -25,6 +26,7 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
   accounts,
   goals = [],
   onSave,
+  initialTransaction,
 }) => {
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
@@ -38,6 +40,43 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
   const [transactedAt, setTransactedAt] = useState(
     new Date().toISOString().split("T")[0]
   );
+
+  // Sincronizar al abrir el modal o si se pasa un movimiento para editar
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialTransaction) {
+        setType(initialTransaction.type);
+        setAmount(String(initialTransaction.amount));
+        setDescription(initialTransaction.description);
+        setCategory(initialTransaction.category);
+        setAccountId(initialTransaction.accountId || accounts[0]?.id || "");
+        setGoalId(initialTransaction.goalId || goals[0]?.id || "");
+        setNotes(initialTransaction.notes || "");
+        setIsAntExpense(initialTransaction.isAntExpense || false);
+        setInstallmentsTotal(initialTransaction.installmentsTotal || 1);
+        setTransactedAt(
+          initialTransaction.transactedAt
+            ? new Date(initialTransaction.transactedAt).toISOString().split("T")[0]
+            : new Date().toISOString().split("T")[0]
+        );
+      } else {
+        // Modo creación: limpiar y asegurar cuenta y meta válidas
+        if (!accountId && accounts.length > 0) {
+          setAccountId(accounts[0].id);
+        }
+        if ((!goalId || !goals.some((g) => g.id === goalId)) && goals.length > 0) {
+          setGoalId(goals[0].id);
+        }
+      }
+    }
+  }, [isOpen, initialTransaction, accounts, goals]);
+
+  // Si el usuario cambia a Aporte Ahorro y goalId está vacío, asignar primera meta
+  React.useEffect(() => {
+    if (type === "saving_transfer" && (!goalId || !goals.some((g) => g.id === goalId)) && goals.length > 0) {
+      setGoalId(goals[0].id);
+    }
+  }, [type, goalId, goals]);
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const isCreditCard = selectedAccount?.accountType === "credit_card";
@@ -69,7 +108,9 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) return;
 
-    const chosenGoal = goals.find((g) => g.id === goalId);
+    // Si es saving_transfer y no hay goalId seleccionado explícitamente, tomar primera meta existente
+    const resolvedGoalId = type === "saving_transfer" ? (goalId || goals[0]?.id) : undefined;
+    const chosenGoal = goals.find((g) => g.id === resolvedGoalId);
 
     onSave({
       type,
@@ -77,7 +118,7 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
       description: description || (type === "expense" ? "Gasto general" : type === "saving_transfer" ? "Aporte a meta" : "Ingreso general"),
       category: type === "saving_transfer" ? "otros_ingresos" : category,
       accountId: accountId || undefined,
-      goalId: type === "saving_transfer" ? goalId : undefined,
+      goalId: resolvedGoalId,
       goalTitle: type === "saving_transfer" && chosenGoal ? chosenGoal.title : undefined,
       notes: notes || undefined,
       isAntExpense: type === "expense" ? isAntExpense : false,
@@ -89,20 +130,22 @@ export const TransactionFormModal: React.FC<TransactionFormModalProps> = ({
 
     onClose();
     // Reset
-    setAmount("");
-    setDescription("");
-    setNotes("");
-    setIsAntExpense(false);
-    setInstallmentsTotal(1);
-    setTransactedAt(todayStr);
+    if (!initialTransaction) {
+      setAmount("");
+      setDescription("");
+      setNotes("");
+      setIsAntExpense(false);
+      setInstallmentsTotal(1);
+      setTransactedAt(todayStr);
+    }
   };
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Nuevo Movimiento Detallado"
-      subtitle="Gestiona con precisión cuentas, fechas, cuotas y asignación a metas"
+      title={initialTransaction ? "Editar Movimiento" : "Nuevo Movimiento Detallado"}
+      subtitle={initialTransaction ? "Modifica los datos y asignación de este movimiento" : "Gestiona con precisión cuentas, fechas, cuotas y asignación a metas"}
       maxWidth="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
